@@ -266,6 +266,7 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
 /* Import from a zip, under the new-deck form. */
 .import-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1rem; }
 .file-button { position: relative; cursor: pointer; }
+.file-button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -300,3 +301,18 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
 .search-bar { margin: 1.5rem 0 0.5rem; }
 .search-bar .row-form { margin: 0; max-width: 34rem; }
 .search-bar p { margin: 0.5rem 0 0; }
+
+/* "Zum Inhalt": the first stop for keyboard users, shown on focus. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.4rem 0.8rem;
+  background: var(--card);
+  color: var(--fg);
+  border: 2px solid var(--accent);
+  border-radius: 0.4rem;
+}
+.skip-link:focus { top: 0.5rem; }
+main:focus { outline: none; }

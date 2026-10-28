@@ -399,10 +399,19 @@ function buildSkeleton() {
   ui.toolbar = h("div", { class: "ed-toolbar", role: "toolbar", "aria-label": "Werkzeuge" });
   ui.slides = h("div", { class: "ed-slide-list", tabIndex: 0, "aria-label": "Folien" });
   ui.slideActions = h("div", { class: "ed-slide-actions" });
-  ui.stage = h("div", { class: "ed-stage" });
+  // The stage takes the focus: Tab then walks through the slide's
+  // elements, arrows move them, Enter edits; ui.live tells screen readers
+  // what is selected.
+  ui.stage = h("div", {
+    class: "ed-stage",
+    tabIndex: 0,
+    role: "group",
+    "aria-label": "Folie: Tab wählt ein Element, Pfeiltasten verschieben, Enter bearbeitet, Entf löscht",
+  });
+  ui.live = h("div", { class: "visually-hidden", role: "status", "aria-live": "polite" });
   ui.frame = h("div", { class: "ed-frame" });
   ui.overlay = h("div", { class: "ed-overlay" });
-  ui.stage.append(ui.frame, ui.overlay);
+  ui.stage.append(ui.frame, ui.overlay, ui.live);
   ui.notesBody = h("div", { class: "ed-notes-body", "aria-label": "Notizen" });
   ui.panel = h("aside", { class: "ed-panel", "aria-label": "Eigenschaften" });
 
@@ -758,6 +767,7 @@ function wireStage() {
     const pt = toSlide(e);
     const id = hitTest(pt);
     if (editing) stopEditing();
+    ui.stage.focus({ preventScroll: true });
     if (!id) {
       sel = [];
       selectionChanged();
@@ -805,6 +815,31 @@ function selectionChanged() {
   renderOverlay();
   renderPanel();
   updateToolbar();
+  announceSelection();
+}
+
+// "Textfeld «Hallo Welt» ausgewählt" for screen readers.
+function announceSelection() {
+  const els = selectedEls();
+  let msg = "Keine Auswahl";
+  if (els.length > 1) msg = els.length + " Elemente ausgewählt";
+  else if (els.length === 1) {
+    const el = els[0];
+    const what = el.placeholder && resolved(el).placeholder ? resolved(el).placeholder.label : TYPE_NAMES[el.type];
+    const words = el.type === "text" && el.text ? rt.plainText(el.text).slice(0, 60) : el.alt || "";
+    msg = what + (words ? " «" + words + "»" : "") + " ausgewählt";
+  }
+  if (ui.live.textContent !== msg) ui.live.textContent = msg;
+}
+
+// Tab on the stage: the next (Shift: previous) element of the slide.
+function cycleSelection(dir) {
+  const els = slide().elements;
+  if (!els.length) return;
+  const i = sel.length ? els.findIndex((e) => e.id === sel[sel.length - 1]) : -1;
+  const j = i < 0 ? (dir > 0 ? 0 : els.length - 1) : (i + dir + els.length) % els.length;
+  sel = [els[j].id];
+  selectionChanged();
 }
 
 // Snap targets: the slide's edges and centre, and the other elements'.
@@ -1696,6 +1731,10 @@ document.addEventListener("keydown", (e) => {
       break;
     case "PageUp":
       selectSlide(cur - 1);
+      break;
+    case "Tab":
+      if (document.activeElement !== ui.stage) return;
+      cycleSelection(e.shiftKey ? -1 : 1);
       break;
     case "PageDown":
       selectSlide(cur + 1);

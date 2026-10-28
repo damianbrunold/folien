@@ -30,9 +30,10 @@ Implemented step by step, phase by phase:
       import as a new deck; ZIP downloads in the lists and the archive
 - [x] Phase 8 — PowerPoint export (.pptx): text, shapes, pictures, videos,
       transitions, builds as animations, notes; also in the bundle
-- [ ] Phase 9 — sharing (view/edit), versions, templates, tags and search,
+- [x] Phase 9 — sharing (view/edit), versions, templates, tags and search,
       tables, clean-up and backup timers, Debian package; accessibility
-      pass still open
+      (design contrast WCAG AA, tested; keyboard selection on the editor
+      stage with screen-reader announcements; skip link, status regions)
 
 ## Layout
 

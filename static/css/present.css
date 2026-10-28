@@ -54,7 +54,7 @@ body.present-body.no-cursor { cursor: none; }
   opacity: 0;
   transition: opacity 0.3s;
 }
-.present-controls.shown { opacity: 1; }
+.present-controls.shown, .present-controls:focus-within { opacity: 1; }
 .present-btn {
   min-width: 2.25rem;
   height: 2.25rem;

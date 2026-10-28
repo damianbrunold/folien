@@ -42,6 +42,7 @@ export function startPresentation(root, opts) {
     return b;
   };
   const counter = el("span", "present-counter");
+  counter.setAttribute("role", "status");
   controls.append(
     btn("‹", "Zurück", () => step("prev")),
     counter,
@@ -155,6 +156,8 @@ export function startPresentation(root, opts) {
       return;
     }
     digits = "";
+    // Enter and Space on a focused control press it.
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button")) return;
     if (e.key === "Escape" && atEnd && opts.exitUrl) {
       location.href = opts.exitUrl;
       return;

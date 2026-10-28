@@ -38,6 +38,7 @@
            (script (@ (src ,(asset "js/theme-toggle.js")) (defer #t)))
            ,@extra)
          `(body
+           (a (@ (class "skip-link") (href "#main")) "Zum Inhalt")
            (header (@ (class "app-header"))
              (h1 (a (@ (href ,(url "/"))) "Folien"))
              (nav (@ (class "nav"))
@@ -54,7 +55,7 @@
                (button (@ (class "icon-btn js-theme-toggle") (type "button")
                           (aria-label "Hell/Dunkel umschalten"))
                  ,theme-icons)))
-           (main ,body))))
+           (main (@ (id "main") (tabindex "-1")) ,body))))
        "\n"))
 
 ;; page with an optional module script.
@@ -66,7 +67,8 @@
     ;; msg: #f, or (kind . text) with kind 'error or 'success.
     (define (notice msg)
       (if msg
-          `(p (@ (class ,(string-append "notice " (symbol->string (car msg)))))
+          `(p (@ (class ,(string-append "notice " (symbol->string (car msg))))
+                 (role ,(if (eq? (car msg) 'error) "alert" "status")))
               ,(cdr msg))
           ""))
 

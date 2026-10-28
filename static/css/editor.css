@@ -177,6 +177,8 @@ body.editor-body { overflow: hidden; }
   box-shadow: 0 1px 6px rgb(0 0 0 / 0.3);
 }
 .ed-frame .slide { user-select: none; -webkit-user-select: none; }
+.ed-stage:focus { outline: none; }
+.ed-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ed-frame .el-text.is-editing { cursor: text; }
 .ed-frame .el-table.is-editing .cell { cursor: text; }
 .ed-frame .el-table .cell.is-editing { outline: 3px solid #2563eb; outline-offset: -3px; }

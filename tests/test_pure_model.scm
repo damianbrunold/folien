@@ -8,6 +8,7 @@
         (scm fs)
         (scm string)
         (scm test)
+        (scheme inexact)
         (scm json simple))
 
 (define root
@@ -47,6 +48,32 @@
                               (vector->list (jref (find-design d) "layouts"))))))
     (test-equal (ids "folien") (ids "zh")))
   (test-assert "designs serialize" (string? (json->string (list->vector designs)))))
+
+;; WCAG 2 contrast: text in each design stays readable (AA: 4.5:1 for
+;; normal text) for the colour pairs the designs and tables use.
+(define (luminance hex)
+  (define (channel i)
+    (let ((v (/ (string->number (substring hex i (+ i 2)) 16) 255.0)))
+      (if (<= v 0.03928) (/ v 12.92) (expt (/ (+ v 0.055) 1.055) 2.4))))
+  (+ (* 0.2126 (channel 1)) (* 0.7152 (channel 3)) (* 0.0722 (channel 5))))
+
+(define (contrast a b)
+  (let ((la (luminance a)) (lb (luminance b)))
+    (/ (+ (max la lb) 0.05) (+ (min la lb) 0.05))))
+
+(test-group "contrast (WCAG AA)"
+  (for-each
+   (lambda (id)
+     (let ((colors (jref (find-design id) "colors")))
+       (for-each
+        (lambda (pair)
+          (test-assert (string-append id ": " (car pair) " on " (cadr pair))
+            (>= (contrast (jref colors (car pair)) (jref colors (cadr pair))) 4.5)))
+        '(("text" "background") ("muted" "background") ("accent" "background")
+          ("accent2" "background") ("accent3" "background")
+          ("on-accent" "accent") ("on-accent" "accent2") ("on-accent" "accent3")
+          ("text" "light") ("muted" "light")))))
+   (design-ids)))
 
 (test-group "new documents"
   (let ((doc (new-doc "folien" "Hallo")))

@@ -54,6 +54,9 @@
   (test-equal "/login" (location (send app "POST" "/admin/users" #f)))
   (test-equal "/login" (location (send app "GET" "/admin" "folien_session=forged.x")))
   (test-equal 200 (status (send app "GET" "/login" #f)))
+  (test-assert "a skip link to the main content"
+    (let ((b (body (send app "GET" "/login" #f))))
+      (and (has? b "class=\"skip-link\" href=\"#main\"") (has? b "<main id=\"main\""))))
   (test-equal "ok\n" (body (send app "GET" "/healthz" #f)))
   (test-equal 200 (status (send app "GET" "/static/css/app.css" #f)))
   (test-equal "/login" (location (send app "GET" "/archive" #f)))

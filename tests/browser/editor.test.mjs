@@ -286,6 +286,29 @@ test("a table: type into cells, Tab, add a row", async () => {
   await shot("11-table");
 });
 
+test("keyboard: Tab selects elements on the stage, arrows move them", async () => {
+  await browser.eval("document.querySelector('.ed-thumb').click()");
+  await browser.eval("document.querySelector('.ed-stage').focus()");
+  await browser.keys(Keys.escape);
+  await browser.keys(Keys.tab);
+  await browser.waitFor("document.querySelectorAll('.sel-box').length === 1");
+  assert.match(await browser.eval("document.querySelector('.ed-stage [role=status]').textContent"),
+    /^Titel «Hallo Welt» ausgewählt$/);
+  await browser.keys(Keys.tab);
+  assert.match(await browser.eval("document.querySelector('.ed-stage [role=status]').textContent"),
+    /^Untertitel/);
+  // Shift+Tab goes back; the focus stays on the stage.
+  await browser.keys(Keys.tab, [Keys.shift]);
+  assert.match(await browser.eval("document.querySelector('.ed-stage [role=status]').textContent"), /^Titel/);
+  assert.equal(await browser.eval("document.activeElement.classList.contains('ed-stage')"), true);
+  const doc = await saved();
+  const x0 = doc.slides[0].elements[0].x;
+  await browser.eval("document.querySelector('.ed-stage').focus()");
+  await browser.keys(Keys.right, [Keys.shift]);
+  const doc2 = await saved();
+  assert.equal(doc2.slides[0].elements[0].x, (x0 === undefined ? 160 : x0) + 10);
+});
+
 test("a conflicting save shows the banner", async () => {
   await browser.eval("window.__putStatus = 409");
   await browser.eval("document.querySelector('.ed-title').focus()");
