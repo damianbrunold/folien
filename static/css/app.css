@@ -262,3 +262,17 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
   font-weight: normal;
 }
 .row-form label.inline-field select { margin: 0; }
+
+/* Import from a zip, under the new-deck form. */
+.import-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+.file-button { position: relative; cursor: pointer; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.error-text { color: var(--danger); }
+.bundle-note { margin: 1rem 0 0; }

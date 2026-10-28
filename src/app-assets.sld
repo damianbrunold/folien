@@ -17,6 +17,9 @@
           (app db)
           (app users))           ; col
   (export store-upload!
+          store-asset-file!
+          file-sha
+          mime-extension
           deck-asset
           list-deck-assets
           asset-file
@@ -124,6 +127,65 @@ Description: The content type of a file from its first bytes, or #f if
       (let ((n (and (string? x) (string->number x))))
         (if (and n (exact-integer? n) (<= 1 n 100000)) n 'null)))
 
+    (define (file-sha path)
+      "Syntax: (file-sha path)
+Library: (app assets)
+Description: The SHA-256 of a file's content, as hex."
+      (bytevector->hex (sha256-file path)))
+
+    (define (mime-extension mime)
+      "Syntax: (mime-extension mime)
+Library: (app assets)
+Description: The file extension for an accepted content type."
+      (cond ((equal? mime "image/png") "png")
+            ((equal? mime "image/jpeg") "jpg")
+            ((equal? mime "image/gif") "gif")
+            ((equal? mime "image/webp") "webp")
+            ((equal? mime "image/svg+xml") "svg")
+            ((equal? mime "video/mp4") "mp4")
+            ((equal? mime "video/webm") "webm")
+            (else "bin")))
+
+    ;; Puts content into the store under sha (unless it is there), via
+    ;; (write! tmp-path), then links it to the deck. Returns its row.
+    (define (place-and-link! db data-dir deck-id sha mime size name width height write!)
+      (let ((dir (string-append (assets-root data-dir) "/" (substring sha 0 2)))
+            (target (asset-file data-dir sha)))
+        (ensure-asset-dir data-dir)
+        (ensure-dir dir)
+        (unless (file-exists? target)
+          ;; Into place under a temporary name, then renamed, so a
+          ;; half-written file is never served.
+          (let ((tmp (string-append target ".tmp-" (random-string "abcdefghijklmnop" 8))))
+            (write! tmp)
+            (move-file tmp target)))
+        (with-db-transaction db
+          (lambda (tx)
+            (db-exec tx
+              (string-append "INSERT INTO assets (sha256, mime, size, width, height) "
+                             "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (sha256) DO NOTHING")
+              sha mime size (->int-or-null width) (->int-or-null height))
+            (db-exec tx
+              (string-append "INSERT INTO presentation_assets (presentation_id, sha256, name) "
+                             "VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+              deck-id sha name)))
+        (deck-asset-row db deck-id sha)))
+
+    (define (store-asset-file! db data-dir deck-id path name width height)
+      "Syntax: (store-asset-file! db data-dir deck-id path name width height)
+Library: (app assets)
+Description: Stores the file at path (which it moves away) as an asset
+  of the deck and returns its row, or 'empty or 'unsupported as
+  store-upload! does (the file then stays)."
+      (let* ((size (file-size path))
+             (mime (and (> size 0) (sniff-mime (file-head path)))))
+        (cond
+          ((= size 0) 'empty)
+          ((not mime) 'unsupported)
+          (else
+           (place-and-link! db data-dir deck-id (file-sha path) mime size name width height
+                            (lambda (tmp) (move-file path tmp)))))))
+
     (define (store-upload! db data-dir deck-id req name width height)
       "Syntax: (store-upload! db data-dir deck-id req name width height)
 Library: (app assets)
@@ -132,41 +194,19 @@ Description: Stores the body of req as an asset of the deck (whose owner
   height, name. width and height are the client's measurements (strings
   or #f). Returns 'empty for an empty body and 'unsupported for a type
   that is not accepted."
-      (let* ((spooled (http-request-body-file req))
-             (bytes (and (not spooled) (http-request-body-bytes req)))
-             (size (cond (spooled (file-size spooled))
-                         (bytes (bytevector-length bytes))
-                         (else 0)))
-             (mime (and (> size 0)
-                        (sniff-mime (if spooled (file-head spooled) (head-of bytes))))))
-        (cond
-          ((= size 0) 'empty)
-          ((not mime) 'unsupported)
-          (else
-           (let* ((sha (bytevector->hex (if spooled (sha256-file spooled) (sha256-hash bytes))))
-                  (dir (string-append (assets-root data-dir) "/" (substring sha 0 2)))
-                  (target (asset-file data-dir sha)))
-             (ensure-asset-dir data-dir)
-             (ensure-dir dir)
-             (unless (file-exists? target)
-               ;; Into place under a temporary name, then renamed, so a
-               ;; half-written file is never served.
-               (let ((tmp (string-append target ".tmp-" (random-string "abcdefghijklmnop" 8))))
-                 (if spooled
-                     (move-file spooled tmp)
-                     (write-bytes tmp bytes))
-                 (move-file tmp target)))
-             (with-db-transaction db
-               (lambda (tx)
-                 (db-exec tx
-                   (string-append "INSERT INTO assets (sha256, mime, size, width, height) "
-                                  "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (sha256) DO NOTHING")
-                   sha mime size (->int-or-null width) (->int-or-null height))
-                 (db-exec tx
-                   (string-append "INSERT INTO presentation_assets (presentation_id, sha256, name) "
-                                  "VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-                   deck-id sha name)))
-             (deck-asset-row db deck-id sha))))))
+      (let ((spooled (http-request-body-file req)))
+        (if spooled
+            (store-asset-file! db data-dir deck-id spooled name width height)
+            (let* ((bytes (or (http-request-body-bytes req) (bytevector)))
+                   (size (bytevector-length bytes))
+                   (mime (and (> size 0) (sniff-mime (head-of bytes)))))
+              (cond
+                ((= size 0) 'empty)
+                ((not mime) 'unsupported)
+                (else
+                 (place-and-link! db data-dir deck-id (bytevector->hex (sha256-hash bytes))
+                                  mime size name width height
+                                  (lambda (tmp) (write-bytes tmp bytes)))))))))
 
     (define asset-columns
       "a.sha256, a.mime, a.size, a.width, a.height, pa.name, pa.added_at")

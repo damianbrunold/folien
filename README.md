@@ -26,7 +26,8 @@ Implemented step by step, phase by phase:
       presenter console with notes, next preview and timer, phone remote
 - [x] Phase 6 — PDF export: slides (960 × 540 pt) or A4 handouts with 2 or 4
       per page, each with or without notes; builds final or step by step
-- [ ] Phase 7 — zip bundle export/import
+- [x] Phase 7 — zip bundle: export (document, assets, PDFs, offline player),
+      import as a new deck; ZIP downloads in the lists and the archive
 - [ ] Phase 8 — PPTX export
 - [ ] Phase 9 — sharing, snapshots, packaging
 
@@ -49,6 +50,8 @@ src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-assets.sld    uploaded images and videos (content-addressed files)
 src/app-export-pdf.sld  the deck as PDF, natively with (scm pdf)
+src/app-bundle.sld    the deck as zip bundle and back; app-jsbundle.sld builds
+                      the offline player's script
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
 static/js/render.js   draws slides (viewer, editor, later player and exports)
@@ -90,7 +93,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.4.0 or later.
+Needs dabscm 2.4.1 or later.
 
 ## PDF export
 
@@ -104,6 +107,24 @@ with clickable web links. Images are embedded once each (PNG, JPEG, SVG
 rasterized), videos show their poster frame, hidden slides are left out.
 `FOLIEN_PDF_OUT=/tmp/x.pdf scm tests/test_pure_export.scm` writes a test
 deck to look at.
+
+## Bundles
+
+`GET /decks/<id>/export.zip` (ZIP in the lists, on the deck page) gives
+everything in one file: `manifest.json`, `presentation.json`, `assets/`,
+`exports/` (slides, notes, 2 and 4 per page as PDF), `player/index.html`
+(the presentation, offline, straight from the file system; its script is
+the app's modules turned into one classic script by
+`src/app-jsbundle.sld`, since browsers do not load modules from files)
+and `LIESMICH.txt`. Bundles are cached per deck version in
+`data-dir/bundles` for a day.
+
+"Aus ZIP importieren" on the presentations page (`POST /api/import`, the
+zip as body) makes a new deck from a bundle. Nothing in an uploaded
+archive is trusted: only the two JSON files and the assets the document
+refers to are read, by known names; sizes are checked before and while
+unpacking; each asset must hash to its name and be an accepted type; the
+document must validate; newer bundle versions are refused with a message.
 
 ## Presenting
 

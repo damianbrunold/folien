@@ -54,6 +54,12 @@
            (main ,body))))
        "\n"))
 
+;; page with an optional module script.
+    (define (page-with-script title who script body)
+      (if script
+          (page title who body `(script (@ (type "module") (src ,(asset script)))))
+          (page title who body)))
+
     ;; msg: #f, or (kind . text) with kind 'error or 'success.
     (define (notice msg)
       (if msg
@@ -104,11 +110,17 @@
                   "Bearbeiten")
                `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
                (action-button id "/duplicate" "Duplizieren")
+               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
+                      (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
+                   "ZIP")
                (action-button id "/archive" "Archivieren")
                (action-button id "/trash" "Löschen" "small danger")))
         ((string=? status "archived")
          (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
                (action-button id "/duplicate" "Duplizieren")
+               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
+                      (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
+                   "ZIP")
                (action-button id "/restore" "Reaktivieren")
                (action-button id "/trash" "Löschen" "small danger")))
         (else
@@ -160,12 +172,21 @@
       (let ((title (cond ((string=? status "active") "Präsentationen")
                          ((string=? status "archived") "Archiv")
                          (else "Papierkorb"))))
-        (page title who
+        (page-with-script title who (and (string=? status "active") "js/import.js")
           `(section
              (h2 ,title)
              ,(notice msg)
              ,(if (string=? status "active")
-                  `(div (@ (class "card")) (h3 "Neue Präsentation") ,(new-deck-form))
+                  `(div (@ (class "card")) (h3 "Neue Präsentation") ,(new-deck-form)
+                     (div (@ (class "import-row"))
+                       (label (@ (class "button small file-button"))
+                         "Aus ZIP importieren …"
+                         (input (@ (type "file") (accept ".zip,application/zip")
+                                   (class "js-import visually-hidden")
+                                   (data-import-url ,(url "/api/import"))
+                                   (data-deck-base ,(url "/decks/")))))
+                       (span (@ (class "muted js-import-status"))
+                             "Ein mit Folien exportiertes ZIP wird zu einer neuen Präsentation.")))
                   "")
              ,(if (string=? status "archived")
                   '(p (@ (class "muted"))
@@ -230,7 +251,12 @@
                    (select (@ (name "builds"))
                      (option (@ (value "final")) "fertige Folien")
                      (option (@ (value "steps")) "jeder Schritt eine Seite")))
-                 (button (@ (type "submit") (class "primary")) "PDF herunterladen")))
+                 (button (@ (type "submit") (class "primary")) "PDF herunterladen"))
+               (p (@ (class "muted bundle-note"))
+                  (a (@ (href ,(url (string-append "/decks/" id "/export.zip"))))
+                     "Alles als ZIP herunterladen")
+                  " – die Präsentation mit Bildern und Videos, den PDFs und einem "
+                  "Player, der ohne Server im Browser läuft. Das ZIP lässt sich wieder importieren."))
              ,(if active?
                   `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/rename")))
                             (class "row-form spaced"))

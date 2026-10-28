@@ -20,6 +20,8 @@
         (scm net http request)
         (scm net http response)
         (scm json simple)
+        (scm zip)
+        (scheme file)
         (srfi 18)
         (scm net sockets)
         (scm net http server))
@@ -391,6 +393,107 @@
           (test-assert (has? (body (send "GET" "/trash" carol)) "Bericht 2026"))
           (send "POST" (string-append "/decks/" id "/delete") carol)
           (test-equal 404 (status (send "GET" api carol))))))
+
+    (test-group "bundles: export, import, refusals"
+      (send "POST" "/admin/users" admin "username=erin&password=erinpassword")
+      (let* ((erin (sign-in "erin" "erinpassword"))
+             (id (deck-id-of (send "POST" "/decks" erin "title=B%C3%BCndel&design=zh")))
+             (api (string-append "/api/decks/" id))
+             (png (bytevector-append (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A)
+                                     (make-bytevector 50 7)))
+             (sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=b.png") erin png)) "sha"))
+             (deck (json-body (send "GET" api erin)))
+             (slide (vector-ref (doc-slides (jref deck "doc")) 0))
+             (doc `(("format" . 1)
+                    ("slides" . ,(vector
+                                  (map (lambda (p)
+                                         (if (equal? (car p) "elements")
+                                             (cons "elements"
+                                                   (vector-append
+                                                    (cdr p)
+                                                    (vector `(("id" . "img") ("type" . "image") ("asset" . ,sha)
+                                                              ("x" . 100) ("y" . 100) ("w" . 400) ("h" . 300)))))
+                                             p))
+                                       slide)))))
+             (count-decks (lambda ()
+                            (let ((n (db-scalar db "SELECT count(*) FROM presentations WHERE owner_id = $1"
+                                                (col (find-user-by-name db "erin") "id"))))
+                              (if (string? n) (string->number n) n)))))
+        (test-equal 200 (status (send-json "PUT" api erin `(("revision" . 1) ("doc" . ,doc)))))
+        (let* ((r (send "GET" (string-append "/decks/" id "/export.zip") erin))
+               (zip-bytes (http-response-body r))
+               (zip-file (string-append data-dir "/test-export.zip")))
+          (test-equal 200 (status r))
+          (test-equal "application/zip" (http-response-header r "Content-Type"))
+          (test-assert (has? (http-response-header r "Content-Disposition") ".zip"))
+          (let ((p (open-binary-output-file zip-file)))
+            (write-bytevector zip-bytes p)
+            (close-port p))
+          (call-with-input-zip zip-file
+            (lambda (z)
+              (let ((names (zip-entry-names z)))
+                (for-each (lambda (n) (test-assert n (member n names)))
+                          (list "manifest.json" "presentation.json" "LIESMICH.txt"
+                                (string-append "assets/" sha ".png")
+                                "exports/folien.pdf" "exports/notizen.pdf"
+                                "exports/handout-2.pdf" "exports/handout-4.pdf"
+                                "player/index.html" "player/deck-data.js" "player/folien-player.js"
+                                "player/css/slides.css" "player/fonts/Inter-Regular.woff2"))
+                (test-equal png (zip-read-entry-bytevector z (string-append "assets/" sha ".png")))
+                (test-equal "Bündel"
+                  (jref (json-parse (utf8->string (zip-read-entry-bytevector z "manifest.json"))) "title")))))
+          ;; The same file again comes from the cache.
+          (test-equal zip-bytes (http-response-body (send "GET" (string-append "/decks/" id "/export.zip") erin)))
+          ;; Import: a new deck with the same document and its asset.
+          (let* ((before (count-decks))
+                 (r (send-bytes "POST" "/api/import" erin zip-bytes))
+                 (new-id (jref (json-body r) "id"))
+                 (new-deck (json-body (send "GET" (string-append "/api/decks/" new-id) erin))))
+            (test-equal 201 (status r))
+            (test-assert (not (equal? new-id id)))
+            (test-equal (+ before 1) (count-decks))
+            (test-equal "Bündel" (jref new-deck "title"))
+            (test-equal "zh" (jref new-deck "design"))
+            ;; (compared as stored: jsonb orders the keys)
+            (test-equal (json->string (jref (json-body (send "GET" api erin)) "doc"))
+                        (json->string (jref new-deck "doc")))
+            (test-equal 200 (status (send "GET" (string-append "/api/decks/" new-id "/assets/" sha) erin))))
+          ;; Somebody else's import is theirs: dave cannot see erin's deck.
+          (test-equal 404 (status (send "GET" (string-append "/api/decks/" id) (sign-in "dave" "davepassword")))))
+
+        ;; Refusals: nothing is created.
+        (let* ((before (count-decks))
+               (zip (lambda (entries)
+                      (call-with-output-zip-bytevector
+                       (lambda (z)
+                         (for-each (lambda (e)
+                                     (zip-add-stored-entry z (car e)
+                                                           (if (string? (cdr e)) (string->utf8 (cdr e)) (cdr e))))
+                                   entries)))))
+               (manifest (lambda (extra)
+                           (json->string `(("format" . "folien-bundle") ("version" . 1) ("title" . "X")
+                                           ("design" . "zh") ,@extra))))
+               (good-doc (json->string doc))
+               (refused (lambda (label bytes part)
+                          (let ((r (send-bytes "POST" "/api/import" erin bytes)))
+                            (test-equal label 400 (status r))
+                            (test-assert label (has? (jref (json-body r) "error") part))))))
+          (refused "not a zip" (string->utf8 "hello") "kein lesbares ZIP")
+          (refused "empty" (bytevector) "leer")
+          (refused "no manifest" (zip `(("presentation.json" . ,good-doc))) "manifest.json fehlt")
+          (refused "wrong format" (zip `(("manifest.json" . "{\"format\":\"other\"}"))) "kein Folien-Archiv")
+          (refused "newer" (zip `(("manifest.json" . ,(json->string '(("format" . "folien-bundle") ("version" . 99))))))
+                   "neueren Version")
+          (refused "bad json" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . "{"))) "kein gültiges JSON")
+          (refused "invalid doc" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . "{\"format\":1}")))
+                   "ungültig")
+          (refused "asset missing" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . ,good-doc)))
+                   "fehlt ein Bild")
+          (refused "asset tampered"
+                   (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . ,good-doc)
+                          (,(string-append "assets/" sha ".png") . ,(bytevector-append png (bytevector 1)))))
+                   "Prüfsumme")
+          (test-equal before (count-decks)))))
 
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))

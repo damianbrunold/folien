@@ -19,6 +19,10 @@
           (scm crypto password)
           (scm json simple)
           (scm uri)
+          (scm fs)
+          (scm crypto)
+          (scheme time)
+          (scheme file)
           (scm net http request)
           (scm net http response)
           (scm net http route)
@@ -36,6 +40,7 @@
           (app assets)
           (app remote)
           (app export-pdf)
+          (app bundle)
           (app views))
   (export make-app admin-role)
   (begin
@@ -186,6 +191,36 @@
          (if (= n 1) "" (string-append " (" (number->string n) " pro Seite)")))
        ".pdf"))
 
+;; Bundles are built into data-dir/bundles, once per version of a deck
+    ;; (its revision, title and design), and served from there; files older
+    ;; than a day are removed when the next one is built.
+    (define bundle-max-age-ms (* 24 60 60 1000))
+
+    (define (bundle-file data-dir static-dir db deck)
+      (let* ((dir (string-append data-dir "/bundles"))
+             (key (bytevector->hex
+                   (bytevector-copy
+                    (sha256-hash (string-append (col deck "id") "|" (id->string (col deck "revision"))
+                                                "|" (col deck "title") "|" (col deck "design")
+                                                "|" (number->string bundle-version)))
+                    0 12)))
+             (path (string-append dir "/" (col deck "id") "-" key ".zip")))
+        (unless (directory-exists? dir)
+          (guard (e (#t #f)) (make-directory dir)))
+        (unless (file-exists? path)
+          (let ((now-ms (* 1000 (current-second))))
+            (for-each (lambda (f)
+                        (let ((p (string-append dir "/" f)))
+                          (guard (e (#t #f))
+                            (when (> (- now-ms (file-modification-timestamp p)) bundle-max-age-ms)
+                              (delete-file p)))))
+                      (directory-files dir)))
+          (let ((tmp (string-append path ".tmp-" (random-string "abcdefghijklmnop" 8))))
+            (guard (e (#t (when (file-exists? tmp) (delete-file tmp)) (raise e)))
+              (write-bundle! db data-dir static-dir deck tmp)
+              (move-file tmp path))))
+        path))
+
     ;; --- presenting -----------------------------------------------------
 
     ;; Messages between presenting windows, rebuilt from the fields that
@@ -252,6 +287,9 @@ Description: Builds the app's request handler. settings is an alist:
              (prefix (site-prefix site))
              (db (setting settings 'db))
              (data-dir (setting settings 'data-dir))
+             (static-dir (setting settings 'static-dir))
+             (max-upload (let ((p (assq 'max-upload-bytes settings)))
+                           (if p (cdr p) (* 1024 1024 1024))))
              (auth (make-auth
                     (make-session-config
                      cookie-name
@@ -515,6 +553,46 @@ Description: Builds the app's request handler. settings is an alist:
                       ("Cache-Control" . "no-store"))
                     (deck->pdf (deck-doc deck) (col deck "design") (col deck "title")
                                data-dir opts))))))))
+
+        ;; Everything as one zip: document, assets, PDFs, offline player.
+        (route! "GET" "/decks/:id/export.zip"
+          (signed-in
+            (lambda (req params user)
+              (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                (if (not deck)
+                    (http-not-found)
+                    (make-http-file-response
+                     200
+                     `(("Content-Type" . "application/zip")
+                       ("Content-Disposition"
+                        . ,(download-disposition (string-append (col deck "title") ".zip")))
+                       ("Cache-Control" . "no-store"))
+                     (bundle-file data-dir static-dir db deck)))))))
+
+        ;; A bundle (the zip as the body) becomes a new deck: 201 {"id"},
+        ;; or 400 {"error"} with a message for the user.
+        (route! "POST" "/api/import"
+          (api-signed-in
+            (lambda (req params user)
+              (let* ((spooled (http-request-body-file req))
+                     (bytes (and (not spooled) (http-request-body-bytes req)))
+                     (tmp (and (not spooled)
+                               (string-append data-dir "/import-" (random-string "abcdefghijklmnop" 12)))))
+                (cond
+                  ((and (not spooled) (or (not bytes) (= 0 (bytevector-length bytes))))
+                   (json-error 400 "Die Datei ist leer."))
+                  (else
+                   (when tmp
+                     (let ((p (open-binary-output-file tmp)))
+                       (write-bytevector bytes p)
+                       (close-port p)))
+                   (dynamic-wind
+                     (lambda () #f)
+                     (lambda ()
+                       (guard (e ((bundle-error? e) (json-error 400 (bundle-error-message e))))
+                         (json-status 201 `(("id" . ,(import-bundle! db data-dir (col user "id")
+                                                                     (or spooled tmp) max-upload))))))
+                     (lambda () (when (and tmp (file-exists? tmp)) (delete-file tmp))))))))))
 
         (route! "GET" "/decks/:id/present" (deck-app-page present-page))
         (route! "GET" "/decks/:id/presenter" (deck-app-page presenter-page))

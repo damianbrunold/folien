@@ -42,6 +42,7 @@
    `((url-prefix      . ,prefix)
      (static-dir      . ,(resolve-path root (config-ref cfg 'static-dir "static")))
      (data-dir        . ,data-dir)
+     (max-upload-bytes . ,(config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))
      (db              . ,db)
      (session-secret  . ,(config-secret cfg 'session-secret))
      (session-max-age . ,(config-ref cfg 'session-max-age (* 60 60 24 7)))

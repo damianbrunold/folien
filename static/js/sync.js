@@ -19,11 +19,13 @@ export class Sync {
   constructor(opts) {
     this.opts = opts;
     this.id = Math.random().toString(36).slice(2, 12);
-    if (typeof BroadcastChannel !== "undefined") {
+    try {
       this.bc = new BroadcastChannel("folien-" + opts.deckId);
       this.bc.onmessage = (e) => {
         if (e.data && e.data.from !== this.id) opts.onMessage(e.data, "local");
       };
+    } catch (e) {
+      this.bc = null; // no channel (an old browser, or a page opened from a file)
     }
     if (opts.remote !== false && typeof EventSource !== "undefined") {
       this.es = new EventSource(opts.eventsUrl);

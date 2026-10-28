@@ -19,6 +19,7 @@
           deck-status
           deck-doc
           create-deck!
+          create-deck-with-doc!
           save-doc!
           rename-deck!
           set-deck-status!
@@ -84,6 +85,18 @@ Description: Creates an active deck with a title slide and returns its id."
                          "VALUES ($1, $2, $3, $4, $5::jsonb)")
           id (->int owner-id) title design-id
           (json->string (new-doc design-id title)))
+        id))
+
+    (define (create-deck-with-doc! db owner-id title design-id doc)
+      "Syntax: (create-deck-with-doc! db owner-id title design-id doc)
+Library: (app decks)
+Description: Creates an active deck with doc (already validated) and
+  returns its id."
+      (let ((id (uuidgen)))
+        (db-exec db
+          (string-append "INSERT INTO presentations (id, owner_id, title, design, doc) "
+                         "VALUES ($1, $2, $3, $4, $5::jsonb)")
+          id (->int owner-id) title design-id (json->string doc))
         id))
 
     (define (save-doc! db owner-id id base-revision doc design-id . title)
