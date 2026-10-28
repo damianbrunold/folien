@@ -45,3 +45,10 @@
 ;; The largest upload, in bytes. Bodies above 1 MB are spooled to a
 ;; temporary file, so this does not need memory.
 (define max-upload-bytes (* 1024 1024 1024))
+
+;; bin/maintenance.scm (nightly) deletes decks that are longer than this
+;; in the trash, in days.
+(define trash-days 30)
+
+;; bin/backup.scm keeps this many database dumps in data-dir/backups.
+(define backup-keep 14)

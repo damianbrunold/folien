@@ -218,6 +218,21 @@ logo is **not** included; it needs the official file and permission to use
 it. The slide layouts should be checked against the canton's official
 presentation template.
 
+## Maintenance and backups
+
+`bin/maintenance.scm` (nightly, `folien-maintenance.timer`) deletes decks
+that have been in the trash longer than `trash-days` (30), removes assets
+no deck uses any more (a file is shared by all decks with the same
+content and goes with the last of them) and leftovers of broken uploads,
+imports and cached bundles; anything younger than an hour (assets) or a
+day (files) stays.
+
+`bin/backup.scm` (nightly, `folien-backup.timer`) writes a compressed
+`pg_dump` to `data-dir/backups` and keeps `backup-keep` (14) of them. Back
+up `data-dir` (`/var/lib/folien`: the dumps and the assets) with your
+usual file backup after it. Restore: `gunzip -c <dump> | psql folien`,
+then put `data-dir` back.
+
 ## Deploy
 
 As in starter-admin: the app binds loopback only behind a TLS-terminating

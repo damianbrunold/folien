@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly database backup of folien (pg_dump into /var/lib/folien/backups)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=folien
+Group=folien
+WorkingDirectory=/opt/folien
+ExecStart=/usr/local/bin/scm bin/backup.scm /etc/folien/config.scm
+StateDirectory=folien
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

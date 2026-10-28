@@ -41,22 +41,25 @@ chmod 640 "/etc/$APP/config.scm"
 
 for unit in "$APP.service" \
             "$APP-health.service" "$APP-health.timer" \
-            "$APP-restart.service" "$APP-restart.timer"; do
+            "$APP-restart.service" "$APP-restart.timer" \
+            "$APP-maintenance.service" "$APP-maintenance.timer" \
+            "$APP-backup.service" "$APP-backup.timer"; do
   sed "s|/usr/local/bin/scm|$SCM|" "$SRC/deploy/systemd/$unit" \
     > "/etc/systemd/system/$unit"
 done
 
 systemctl daemon-reload
-systemctl enable "$APP.service" "$APP-health.timer" "$APP-restart.timer"
+systemctl enable "$APP.service" "$APP-health.timer" "$APP-restart.timer" \
+                 "$APP-maintenance.timer" "$APP-backup.timer"
 
 if [ -n "${NEW_CONFIG:-}" ]; then
   echo "Set the database settings in /etc/$APP/config.scm, then:"
   echo "  sudo -u $APP $SCM /opt/$APP/bin/seed-admin.scm --config /etc/$APP/config.scm <name>"
-  echo "  sudo systemctl start $APP.service $APP-health.timer $APP-restart.timer"
+  echo "  sudo systemctl start $APP.service $APP-health.timer $APP-restart.timer $APP-maintenance.timer $APP-backup.timer"
   exit 0
 fi
 
 systemctl restart "$APP.service"
-systemctl start "$APP-health.timer" "$APP-restart.timer"
+systemctl start "$APP-health.timer" "$APP-restart.timer" "$APP-maintenance.timer" "$APP-backup.timer"
 
 echo "Installed. Config: /etc/$APP/config.scm. Logs: journalctl -u $APP -f"

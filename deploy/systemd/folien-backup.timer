@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly database backup of folien at 02:30
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=folien-backup.service
+
+[Install]
+WantedBy=timers.target

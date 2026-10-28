@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly clean-up of folien at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=folien-maintenance.service
+
+[Install]
+WantedBy=timers.target

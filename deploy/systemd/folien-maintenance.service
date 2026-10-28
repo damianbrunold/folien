@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly clean-up of folien: trash, unused assets, leftovers
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=folien
+Group=folien
+WorkingDirectory=/opt/folien
+ExecStart=/usr/local/bin/scm bin/maintenance.scm /etc/folien/config.scm
+StateDirectory=folien
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
