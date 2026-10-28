@@ -9,7 +9,8 @@
           (app site)
           (app designs)
           (app users))            ; col
-  (export login-page decks-page deck-page editor-page profile-page admin-page
+  (export login-page decks-page deck-page editor-page present-page presenter-page remote-page
+          profile-page admin-page
           error-page not-found-page)
   (begin
 
@@ -198,7 +199,15 @@
                     ,(cond ((string=? status "archived") " · archiviert (schreibgeschützt)")
                            ((string=? status "trashed") " · im Papierkorb")
                            (else ""))))
-               (div (@ (class "actions")) ,@(deck-actions status id)))
+               (div (@ (class "actions"))
+                 (a (@ (class "button small primary-link")
+                       (href ,(url (string-append "/decks/" id "/present"))))
+                    "Präsentieren")
+                 (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/presenter"))))
+                    "Referentenansicht")
+                 (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/remote"))))
+                    "Fernbedienung")
+                 ,@(deck-actions status id)))
              ,(notice msg)
              (div (@ (id "viewer") (class "viewer")
                      (data-deck-url ,(url (string-append "/api/decks/" id)))
@@ -214,34 +223,55 @@
           `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
           `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
 
-    ;; --- the editor ---------------------------------------------------
-    ;; A full-window application (static/js/editor.js) without the site
-    ;; header; the page only carries the URLs it needs.
+    ;; --- full-window applications --------------------------------------
+    ;; The editor, the presentation, the presenter console and the remote
+    ;; are applications in static/js without the site header; their page
+    ;; only carries the URLs they need, as data attributes.
+
+    (define (deck-urls deck)
+      (let ((id (col deck "id")))
+        `((data-deck-url ,(url (string-append "/api/decks/" id)))
+          (data-designs-url ,(url "/api/designs"))
+          (data-events-url ,(url (string-append "/api/decks/" id "/events")))
+          (data-view-url ,(url (string-append "/decks/" id)))
+          (data-present-url ,(url (string-append "/decks/" id "/present")))
+          (data-presenter-url ,(url (string-append "/decks/" id "/presenter")))
+          (data-remote-url ,(url (string-append "/decks/" id "/remote")))
+          (data-home-url ,(url "/")))))
+
+    (define (app-page deck title-suffix body-class root-id stylesheets script)
+      (string-append
+       (html->string
+        (html5
+         '(@ (lang "de"))
+         `(head
+           (meta (@ (charset "utf-8")))
+           (meta (@ (name "viewport") (content "width=device-width, initial-scale=1")))
+           (title ,(string-append (col deck "title") title-suffix " · Folien"))
+           (link (@ (rel "icon") (href ,(asset "favicon.svg"))))
+           ,@(map (lambda (css) `(link (@ (rel "stylesheet") (href ,(asset css)))))
+                  (append '("css/app.css" "css/slides.css") stylesheets))
+           (script (@ (src ,(asset "js/theme-init.js"))))
+           (script (@ (type "module") (src ,(asset script)))))
+         `(body (@ (class ,body-class))
+            (div (@ (id ,root-id) (class ,root-id) ,@(deck-urls deck))
+              (noscript "Diese Seite braucht JavaScript.")))))
+       "\n"))
 
     (define (editor-page deck)
-      (let ((id (col deck "id")))
-        (string-append
-         (html->string
-          (html5
-           '(@ (lang "de"))
-           `(head
-             (meta (@ (charset "utf-8")))
-             (meta (@ (name "viewport") (content "width=device-width, initial-scale=1")))
-             (title ,(string-append (col deck "title") " · Folien"))
-             (link (@ (rel "icon") (href ,(asset "favicon.svg"))))
-             (link (@ (rel "stylesheet") (href ,(asset "css/app.css"))))
-             (link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
-             (link (@ (rel "stylesheet") (href ,(asset "css/editor.css"))))
-             (script (@ (src ,(asset "js/theme-init.js"))))
-             (script (@ (type "module") (src ,(asset "js/editor.js")))))
-           `(body (@ (class "editor-body"))
-              (div (@ (id "editor") (class "editor")
-                      (data-deck-url ,(url (string-append "/api/decks/" id)))
-                      (data-designs-url ,(url "/api/designs"))
-                      (data-view-url ,(url (string-append "/decks/" id)))
-                      (data-home-url ,(url "/")))
-                (noscript "Der Editor braucht JavaScript.")))))
-         "\n")))
+      (app-page deck "" "editor-body" "editor" '("css/editor.css") "js/editor.js"))
+
+    (define (present-page deck)
+      (app-page deck " (Präsentation)" "present-body" "present" '("css/present.css")
+                "js/present.js"))
+
+    (define (presenter-page deck)
+      (app-page deck " (Referentenansicht)" "presenter-body" "presenter" '("css/present.css")
+                "js/presenter.js"))
+
+    (define (remote-page deck)
+      (app-page deck " (Fernbedienung)" "remote-body" "remote" '("css/present.css")
+                "js/remote.js"))
 
     ;; --- profile ------------------------------------------------------
 

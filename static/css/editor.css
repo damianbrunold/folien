@@ -323,3 +323,20 @@ body.editor-body { overflow: hidden; }
   resize: vertical;
 }
 .ed-panel > .panel-section > button.small { margin: 0.2rem 0 0.5rem; }
+
+/* Build order of elements that build, at their top-left corner. */
+.build-badge {
+  position: absolute;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  margin: -0.6rem 0 0 -0.6rem;
+  padding: 0 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2rem;
+  text-align: center;
+  color: #ffffff;
+  background: #e5007d;
+  border-radius: 0.6rem;
+}
+button.primary-btn { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }

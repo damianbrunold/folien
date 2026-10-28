@@ -19,7 +19,10 @@
         (scm crypto password)
         (scm net http request)
         (scm net http response)
-        (scm json simple))
+        (scm json simple)
+        (srfi 18)
+        (scm net sockets)
+        (scm net http server))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
@@ -290,6 +293,60 @@
               (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,(with-img sha))))))
               (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 5) ("doc" . ,doc))))))
             (test-assert (file-exists? (string-append data-dir "/assets/" (substring sha 0 2) "/" sha))))
+
+;; Presenting: the pages, and messages through the event stream.
+          (for-each
+           (lambda (page)
+             (let ((r (send "GET" (string-append "/decks/" id "/" page) carol)))
+               (test-equal page 200 (status r))
+               (test-assert page (has? (body r) (string-append "js/" page ".js")))
+               (test-assert page (has? (body r) "data-events-url")))
+             (test-equal 404 (status (send "GET" (string-append "/decks/" id "/" page) dave))))
+           '("present" "presenter" "remote"))
+          (let ((events (string-append api "/events")))
+            (test-equal 202 (status (send-json "POST" events carol
+                                               '(("type" . "goto") ("pos" . (("slide" . 1) ("step" . 0)))))))
+            (test-equal 0 (jref (json-body (send-json "POST" events carol '(("type" . "hello")))) "listeners"))
+            (test-equal 400 (status (send-json "POST" events carol '(("type" . "eval")))))
+            (test-equal 400 (status (send-json "POST" events carol
+                                               '(("type" . "goto") ("pos" . (("slide" . "x") ("step" . 0)))))))
+            (test-equal 400 (status (send-json "POST" events carol '(("type" . "blank") ("blank" . "red")))))
+            (test-equal 404 (status (send-json "POST" events dave '(("type" . "hello")))))
+            (test-equal 404 (status (send "GET" events dave)))
+            ;; A real server: a listener gets what another client posts.
+            (let ((server (tcp-http-serve 18190 app 0 "127.0.0.1" 0 0 500)))
+              (dynamic-wind
+                (lambda () #f)
+                (lambda ()
+                  (thread-sleep! 0.3)
+                  (let* ((s (tcp-connect "127.0.0.1" 18190))
+                         (out (socket-binary-output-port s))
+                         (in (socket-binary-input-port s))
+                         ;; Byte by byte: read-bytevector would wait for a
+                         ;; full buffer, and an event stream does not end.
+                         (read-until
+                          (lambda (part)
+                            (let loop ((acc '()))
+                              (let ((text (utf8->string (apply bytevector (reverse acc)))))
+                                (if (string-contains-from text part 0)
+                                    text
+                                    (let ((b (read-u8 in)))
+                                      (if (eof-object? b) text (loop (cons b acc))))))))))
+                    (write-bytevector
+                     (string->utf8 (string-append "GET " events " HTTP/1.1\r\nHost: x\r\nCookie: " carol "\r\n\r\n"))
+                     out)
+                    (flush-output-port out)
+                    (let ((head (read-until "retry: 2000")))
+                      (test-assert (has? head "200 OK"))
+                      (test-assert (has? head "text/event-stream")))
+                    (test-equal 1 (jref (json-body (send-json "POST" events carol
+                                                              '(("type" . "state") ("pos" . (("slide" . 0) ("step" . 1)))
+                                                                ("blank" . "black") ("from" . "w1"))))
+                                        "listeners"))
+                    (test-assert (has? (read-until "\"w1\"}")
+                                       "data: {\"type\":\"state\",\"pos\":{\"slide\":0,\"step\":1},\"blank\":\"black\",\"from\":\"w1\"}"))
+                    (socket-close s)))
+                (lambda () (server-stop server)))))
 
           ;; Invalid documents are refused.
           (let ((r (send-json "PUT" api carol `(("revision" . 6) ("doc" . (("format" . 1)))))))

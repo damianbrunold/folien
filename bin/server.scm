@@ -51,4 +51,5 @@
                                (number->string port) prefix "/"))
 ;; Uploads up to max-upload-bytes; the server spools bodies over 1 MB to
 ;; temporary files.
-(serve-forever port app 0 host 0 (config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))
+(serve-forever port app (config-ref cfg 'http-max-threads 64) host 0
+               (config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))

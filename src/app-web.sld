@@ -33,6 +33,7 @@
           (app model)
           (app decks)
           (app assets)
+          (app remote)
           (app views))
   (export make-app admin-role)
   (begin
@@ -149,6 +150,60 @@
                      "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
                      "base-uri 'none'; object-src 'none'"))
 
+;; --- presenting -----------------------------------------------------
+
+    ;; Messages between presenting windows, rebuilt from the fields that
+    ;; are known so nothing else passes through: {"type": "state" | "goto"
+    ;; | "blank" | "hello", "pos"?: {"slide", "step"}, "blank"?: null |
+    ;; "black" | "white", "from"?: string}.
+    (define (clean-message m)
+      (and (list? m)
+           (let ((type (jref m "type"))
+                 (pos (jref m "pos"))
+                 (blank (jref m "blank" 'null))
+                 (from (jref m "from")))
+             (and (member type '("state" "goto" "blank" "hello"))
+                  (or (not pos)
+                      (and (list? pos)
+                           (exact-integer? (jref pos "slide")) (<= 0 (jref pos "slide") 10000)
+                           (exact-integer? (jref pos "step")) (<= 0 (jref pos "step") 10000)))
+                  (member blank '(null "black" "white"))
+                  (or (not from) (and (string? from) (<= (string-length from) 40)))
+                  `(("type" . ,type)
+                    ,@(if pos `(("pos" . (("slide" . ,(jref pos "slide"))
+                                          ("step" . ,(jref pos "step")))))
+                          '())
+                    ("blank" . ,blank)
+                    ,@(if from `(("from" . ,from)) '()))))))
+
+    ;; A listener stays connected this long, then the browser reconnects
+    ;; (EventSource does), so a thread is never held for good.
+    (define stream-seconds (* 30 60))
+
+    (define (event-stream deck-id)
+      (make-http-stream-response
+       200
+       '(("Content-Type" . "text/event-stream; charset=utf-8")
+         ("Cache-Control" . "no-store")
+         ("X-Accel-Buffering" . "no"))
+       (lambda (port)
+         (let ((l (subscribe! deck-id))
+               (send (lambda (s)
+                       (write-bytevector (string->utf8 s) port)
+                       (flush-output-port port))))
+           (dynamic-wind
+             (lambda () #f)
+             (lambda ()
+               (send "retry: 2000\n\n")
+               ;; Writing to a client that has gone raises, which ends the
+               ;; stream; a comment every 15 s finds out.
+               (let loop ((left stream-seconds))
+                 (when (> left 0)
+                   (let ((m (next-message l 15)))
+                     (send (if m (string-append "data: " m "\n\n") ": ping\n\n"))
+                     (loop (if m left (- left 15)))))))
+             (lambda () (unsubscribe! l)))))))
+
     (define (make-app settings)
       "Syntax: (make-app settings)
 Library: (app web)
@@ -205,6 +260,16 @@ Description: Builds the app's request handler. settings is an alist:
               (html-response
                (decks-page (who user) status (list-decks db (col user "id") status)
                            (notice-from-query req))))))
+
+        ;; A full-window page of the owner's deck (any status).
+        (define (deck-app-page render)
+          (signed-in
+            (lambda (req params user)
+              (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                (if deck
+                    (html-response (render deck))
+                    (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
+                                        (not-found-page (who user))))))))
 
         (define (status-change status target)
           (signed-in
@@ -392,6 +457,33 @@ Description: Builds the app's request handler. settings is an alist:
                        r (http-response-status r)
                        (cons (cons "Content-Security-Policy" asset-csp)
                              (http-response-headers r)))))))))
+
+;; --- presenting ---
+
+        (route! "GET" "/decks/:id/present" (deck-app-page present-page))
+        (route! "GET" "/decks/:id/presenter" (deck-app-page presenter-page))
+        (route! "GET" "/decks/:id/remote" (deck-app-page remote-page))
+
+        (route! "GET" "/api/decks/:id/events"
+          (api-signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (if (deck-status db (col user "id") id)
+                    (event-stream id)
+                    (json-error 404 "no such deck"))))))
+
+        (route! "POST" "/api/decks/:id/events"
+          (api-signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (body (http-request-body req))
+                     (m (and body (<= (string-length body) 2000)
+                             (clean-message (guard (e (#t #f)) (json-parse body))))))
+                (cond
+                  ((not (deck-status db (col user "id") id)) (json-error 404 "no such deck"))
+                  ((not m) (json-error 400 "bad message"))
+                  (else
+                   (json-status 202 `(("listeners" . ,(publish! id (json->string m)))))))))))
 
         ;; --- sign-in ---
 

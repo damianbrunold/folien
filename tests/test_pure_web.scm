@@ -61,6 +61,9 @@
   (test-equal "/login" (location (send app "POST" "/decks" #f)))
   (test-equal "/login" (location (send app "GET" "/decks/abc" #f)))
   (test-equal "/login" (location (send app "GET" "/decks/abc/edit" #f)))
+  (test-equal "/login" (location (send app "GET" "/decks/abc/present" #f)))
+  (test-equal "/login" (location (send app "GET" "/decks/abc/presenter" #f)))
+  (test-equal "/login" (location (send app "GET" "/decks/abc/remote" #f)))
   (test-equal "/login" (location (send app "POST" "/decks/abc/delete" #f))))
 
 (test-group "the API answers 401, not a redirect"
@@ -68,6 +71,8 @@
   (test-equal 401 (status (send app "PUT" "/api/decks/abc" #f)))
   (test-equal 401 (status (send app "GET" "/api/designs" #f)))
   (test-equal 401 (status (send app "POST" "/api/decks/abc/assets" #f)))
+  (test-equal 401 (status (send app "GET" "/api/decks/abc/events" #f)))
+  (test-equal 401 (status (send app "POST" "/api/decks/abc/events" #f)))
   (test-equal "/login" (location (send app "GET" (string-append "/api/decks/abc/assets/" (make-string 64 #\a)) #f)))
   (test-assert (has? (body (send app "GET" "/api/designs" #f)) "not signed in")))
 

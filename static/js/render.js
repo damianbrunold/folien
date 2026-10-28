@@ -280,6 +280,8 @@ function renderMedia(r, design, ctx) {
     if (el.poster && ctx.assetUrl) media.poster = ctx.assetUrl(el.poster);
     media.preload = "metadata";
     media.playsInline = true;
+    media.loop = !!el.loop;
+    media.muted = !!el.muted;
     if (ctx.videoControls) media.controls = true;
   } else {
     media = document.createElement("img");

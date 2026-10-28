@@ -8,6 +8,10 @@
 (define http-host "127.0.0.1")
 (define http-port 8090)
 
+;; Concurrent requests. Every window following a presentation (the
+;; presentation, the presenter console, a remote) holds one while open.
+(define http-max-threads 64)
+
 ;; Path the app is mounted under, e.g. "/team"; "" for the host root. The
 ;; reverse proxy must pass paths through unchanged.
 (define url-prefix "")

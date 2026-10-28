@@ -73,6 +73,37 @@ export function assetApi(deckPath) {
   return { store, handler };
 }
 
+// A stand-in for the event stream of a deck (GET: server-sent events,
+// POST: a message to every listener), as (app remote) does it.
+export function eventRelay(eventsPath) {
+  const listeners = new Set();
+  const handler = async (req, res, path) => {
+    if (path !== eventsPath) return false;
+    if (req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store" });
+      res.write("retry: 1000\n\n");
+      listeners.add(res);
+      req.on("close", () => listeners.delete(res));
+      return true;
+    }
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const msg = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    for (const l of listeners) l.write("data: " + JSON.stringify(msg) + "\n\n");
+    res.writeHead(202, { "Content-Type": "application/json" }).end(JSON.stringify({ listeners: listeners.size }));
+    return true;
+  };
+  return { listeners, handler, close: () => listeners.forEach((l) => l.end()) };
+}
+
+// Several API stand-ins in turn.
+export function apis(...handlers) {
+  return async (req, res, path, url) => {
+    for (const h of handlers) if (await h(req, res, path, url)) return true;
+    return false;
+  };
+}
+
 // files: {"/path": "content"}; api: (req, res, path, url) -> true if it
 // answered. Returns {url, close}.
 export async function serve(files, api) {
@@ -140,7 +171,25 @@ export function editorFiles(deck, designs) {
       <link rel="stylesheet" href="/static/css/editor.css">
       <script type="module" src="/fetch-stub.js"></script>
       <script type="module" src="/static/js/editor.js"></script></head>
-      <body class="editor-body"><div id="editor" class="editor" data-deck-url="/api/decks/d1"
-        data-designs-url="/api/designs" data-view-url="/decks/d1" data-home-url="/"></div></body></html>`,
+      <body class="editor-body"><div id="editor" class="editor" ${DATA}></div></body></html>`,
+    "/present.html": appPage("present", "present.css"),
+    "/presenter.html": appPage("presenter", "present.css"),
+    "/remote.html": appPage("remote", "present.css"),
   };
+}
+
+// The data attributes src/app-views.sld gives the application pages.
+const DATA = `data-deck-url="/api/decks/d1" data-designs-url="/api/designs"
+  data-events-url="/api/decks/d1/events" data-view-url="/view.html"
+  data-present-url="/present.html" data-presenter-url="/presenter.html"
+  data-remote-url="/remote.html" data-home-url="/"`;
+
+function appPage(name, css) {
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/slides.css">
+    <link rel="stylesheet" href="/static/css/${css}">
+    <script type="module" src="/fetch-stub.js"></script>
+    <script type="module" src="/static/js/${name}.js"></script></head>
+    <body class="${name}-body"><div id="${name}" class="${name}" ${DATA}></div></body></html>`;
 }

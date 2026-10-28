@@ -160,6 +160,14 @@ class Browser {
     });
   }
 
+  // Another tab, as an object with the same methods acting on it.
+  async newTab(url) {
+    const r = await this.send("browsingContext.create", { type: "tab" });
+    const tab = Object.create(this, { context: { value: r.context } });
+    if (url) await tab.open(url);
+    return tab;
+  }
+
   async screenshot() {
     const r = await this.send("browsingContext.captureScreenshot", { context: this.context });
     return Buffer.from(r.data, "base64");

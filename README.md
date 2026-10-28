@@ -22,7 +22,8 @@ Implemented step by step, phase by phase:
       lines, properties, undo/redo, autosave with conflict detection, notes
 - [x] Phase 4 — images and videos: upload, drag and drop, paste, image
       placeholders, poster frames, media library, byte-range streaming
-- [ ] Phase 5 — presenting (transitions, builds, presenter console)
+- [x] Phase 5 — presenting: transitions, builds, black/white screen,
+      presenter console with notes, next preview and timer, phone remote
 - [ ] Phase 6 — PDF export (slides, notes, handouts)
 - [ ] Phase 7 — zip bundle export/import
 - [ ] Phase 8 — PPTX export
@@ -51,6 +52,8 @@ src/app-web.sld       routes, JSON API and middleware: make-app
 static/js/render.js   draws slides (viewer, editor, later player and exports)
 static/js/editor.js   the editor; richtext-*.js its text editing, doc-ops.js
                       document operations
+static/js/present.js  presenting: player.js (transitions, builds), deck-nav.js,
+                      presenter.js, remote.js, sync.js (windows in step)
 migrations/           NNNN_*.sql, applied in order at startup
 static/               CSS, fonts (Inter, SIL OFL), favicon; js/render.js draws
                       slides (shared by viewer, editor, player), js/viewer.js
@@ -85,7 +88,21 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.3.2 or later.
+Needs dabscm 2.3.3 or later.
+
+## Presenting
+
+"Präsentieren" opens the deck full-window (F for fullscreen; arrows,
+space, Page Up/Down and clickers move on; B and W blank the screen; a
+number and Enter jump). The "Referentenansicht" shows the current slide,
+what the next click brings, the notes, a timer and the clock; it opens
+the audience window (drag it to the projector and press F there) and
+both stay in step over a BroadcastChannel. The "Fernbedienung" (open it
+on a phone, signed in as the same user) steers through the server:
+`GET /api/decks/<id>/events` is a server-sent event stream and `POST` to
+it sends a message (src/app-remote.sld). Every open stream holds a server
+thread (`http-max-threads`); behind nginx the `X-Accel-Buffering: no`
+header turns off buffering for it.
 
 ## Setup
 

@@ -169,6 +169,25 @@ test("insert, move, resize and delete a shape", async () => {
   assert.equal(doc.slides[0].elements.length, 2);
 });
 
+test("a build effect for an element", async () => {
+  await browser.eval(`(() => {
+    const s = document.querySelector('select[aria-label="Form einfügen"]');
+    s.value = "rect";
+    s.dispatchEvent(new Event("change"));
+  })()`);
+  await browser.eval(`(() => {
+    const s = document.querySelector('select[aria-label="Aufbau"]');
+    s.value = "fly-left";
+    s.dispatchEvent(new Event("change"));
+  })()`);
+  const doc = await saved();
+  const els = doc.slides[0].elements;
+  assert.deepEqual(els[els.length - 1].build, { order: 1, effect: "fly-left" });
+  assert.equal(await browser.eval("document.querySelectorAll('.build-badge').length"), 1);
+  await browser.keys(Keys.delete);
+  await saved();
+});
+
 test("slides: add, move, delete", async () => {
   await browser.eval(`(() => {
     const s = document.querySelector('select[aria-label="Neue Folie"]');

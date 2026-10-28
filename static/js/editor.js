@@ -337,6 +337,15 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") save();
 });
 
+// Opens a presenting window at the current slide, with what is unsaved
+// saved first.
+async function openPresenting(base) {
+  if (editing) stopEditing();
+  const w = window.open("about:blank", "_blank");
+  await save();
+  if (w) w.location.href = base + "#" + (cur + 1);
+}
+
 // --- the skeleton ---------------------------------------------------
 
 const ui = {};
@@ -369,6 +378,20 @@ function buildSkeleton() {
     ui.uploadStatus,
     h("span", { class: "spacer" }),
     h("a", { class: "button small", href: urls.viewUrl, text: "Ansehen" }),
+    h("button", {
+      type: "button",
+      class: "small",
+      text: "Referentenansicht",
+      title: "Präsentieren mit Notizen und Vorschau",
+      on: { click: () => openPresenting(urls.presenterUrl) },
+    }),
+    h("button", {
+      type: "button",
+      class: "small primary-btn",
+      text: "Präsentieren",
+      title: "Ab der aktuellen Folie präsentieren",
+      on: { click: () => openPresenting(urls.presentUrl) },
+    }),
   );
 
   ui.toolbar = h("div", { class: "ed-toolbar", role: "toolbar", "aria-label": "Werkzeuge" });
@@ -675,6 +698,15 @@ function renderOverlay() {
       }
     }
     o.append(box);
+  }
+  // The build order of elements that build.
+  for (const el of slide().elements) {
+    if (!el.build) continue;
+    const r = resolved(el);
+    const badge = h("div", { class: "build-badge", text: String(el.build.order) });
+    badge.style.left = r.x * scale + "px";
+    badge.style.top = r.y * scale + "px";
+    o.append(badge);
   }
   for (const g of guides) {
     const line = h("div", { class: "guide " + (g.axis === "x" ? "gx" : "gy") });
@@ -1892,6 +1924,30 @@ function elementSection(el) {
       el.type === "video" ? check("muted", "Ton aus") : null,
     );
   }
+  const BUILDS = [
+    ["", "Kein Aufbau"],
+    ["appear", "Erscheinen"],
+    ["fade", "Einblenden"],
+    ["fly-left", "Von links"],
+    ["fly-right", "Von rechts"],
+    ["fly-up", "Von unten"],
+    ["fly-down", "Von oben"],
+    ["zoom", "Zoomen"],
+  ];
+  const maxOrder = () => Math.max(0, ...slide().elements.map((x) => (x.build ? x.build.order : 0)));
+  children.push(
+    selectField("Aufbau", el.build ? el.build.effect || "appear" : "", BUILDS, (v) =>
+      change(() => {
+        if (!v) delete el.build;
+        else el.build = { order: el.build ? el.build.order : maxOrder() + 1, effect: v };
+      }),
+    ),
+    el.build
+      ? numberField("Reihenfolge", el.build.order, (n) =>
+          change(() => (el.build.order = Math.max(1, Math.min(1000, Math.round(n))))),
+        { min: 1, max: 1000 })
+      : null,
+  );
   children.push(
     numberField("Deckkraft (%)", Math.round((r.style.opacity === undefined ? 1 : r.style.opacity) * 100), (n) =>
       setStyle("opacity", n >= 100 ? undefined : Math.max(0, Math.min(100, n)) / 100), { min: 0, max: 100 }),

@@ -252,3 +252,4 @@ button.small.danger:hover { color: var(--on-accent); background: var(--danger); 
 .deck-head h2 { margin: 0 0 0.25rem; }
 .deck-head p { margin: 0; }
 .row-form.spaced { margin-top: 1.5rem; max-width: 40rem; }
+a.button.primary-link { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
