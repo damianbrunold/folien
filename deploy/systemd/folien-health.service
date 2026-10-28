@@ -1,0 +1,9 @@
+[Unit]
+Description=folien health probe (restarts the app if /healthz fails)
+After=folien.service
+
+[Service]
+Type=oneshot
+ExecCondition=/usr/bin/systemctl is-active --quiet folien.service
+# Host/port come from the config; two strikes before a restart.
+ExecStart=/opt/folien/deploy/healthcheck.sh /etc/folien/config.scm folien.service

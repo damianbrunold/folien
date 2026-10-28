@@ -1,0 +1,41 @@
+[Unit]
+Description=folien scheme webapp
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Allow a few quick restarts, but if we crash-loop more than 5 times in
+# 60s, give up rather than burn CPU.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=folien
+Group=folien
+WorkingDirectory=/opt/folien
+# deploy/install.sh replaces the scm path with $SCM. Pending migrations
+# are applied at each start.
+ExecStart=/usr/local/bin/scm bin/server.scm /etc/folien/config.scm
+
+# Restart on any exit. Combined with the daily restart timer this makes
+# the service self-healing across OOMs and unexpected exceptions.
+Restart=always
+RestartSec=3s
+# The JVM exits with 128+SIGTERM on a normal stop.
+SuccessExitStatus=143
+# Give the HTTP server (10s graceful drain by default) time to finish.
+TimeoutStopSec=15s
+
+# Logs go to journald: journalctl -u folien -f
+StandardOutput=journal
+StandardError=journal
+
+# --- hardening ---
+# All state lives in PostgreSQL: the whole file system is read-only for
+# the app.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

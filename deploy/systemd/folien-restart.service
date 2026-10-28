@@ -1,0 +1,6 @@
+[Unit]
+Description=Daily restart of folien (clears slow leaks, picks up config)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl try-restart folien.service

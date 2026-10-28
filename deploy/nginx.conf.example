@@ -1,0 +1,31 @@
+# Reverse proxy in front of folien. The app binds 127.0.0.1 only;
+# nginx terminates TLS on the public interface and forwards to it.
+
+upstream folien_backend {
+    server 127.0.0.1:8090;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name example.com;
+
+    # ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+    # At the host root. To mount the app under a path instead, set
+    # (define url-prefix "/team") in the config and use
+    # "location /team/" here. proxy_pass without a URI part passes
+    # the path through unchanged, which is what the app expects.
+    location / {
+        proxy_pass         http://folien_backend;
+        proxy_http_version 1.1;
+        proxy_set_header   Connection        "";
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+}
