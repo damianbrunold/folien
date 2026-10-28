@@ -1,0 +1,4 @@
+#!/bin/sh
+# Scheme runtime for @PKG@: the dabscm build this package was made with.
+# Extra JVM options (e.g. -Xmx1g) via JAVA_OPTS, see /etc/default/@PKG@.
+exec java $JAVA_OPTS -jar /opt/@PKG@/lib/scm.jar "$@"

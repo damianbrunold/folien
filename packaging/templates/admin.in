@@ -1,0 +1,20 @@
+#!/bin/sh
+# @PKG@-admin <script> [args...]: run one of the app's bin/<script>.scm
+# tools with the installed runtime and /etc/@PKG@/config.scm, e.g.
+#   sudo -u @PKG@ @PKG@-admin seed-admin admin
+#   sudo -u @PKG@ @PKG@-admin backup
+set -e
+APP=/opt/@PKG@/app
+if [ $# -eq 0 ]; then
+  echo "usage: @PKG@-admin <script> [args...]"
+  echo "scripts:"
+  for f in "$APP"/bin/*.scm; do echo "  $(basename "$f" .scm)"; done
+  exit 2
+fi
+script=$1
+shift
+[ -f /etc/default/@PKG@ ] && . /etc/default/@PKG@ && export JAVA_OPTS
+FOLIEN_CONFIG=/etc/@PKG@/config.scm
+export FOLIEN_CONFIG
+cd "$APP"
+exec /opt/@PKG@/bin/scm "bin/$script.scm" "$@"

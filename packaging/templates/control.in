@@ -1,0 +1,16 @@
+Package: @PKG@
+Version: @VERSION@
+Architecture: all
+Maintainer: @MAINTAINER@
+Installed-Size: @INSTALLED_SIZE@
+Depends: default-jre-headless | java11-runtime-headless, curl, adduser, postgresql-client
+Recommends: postgresql
+Suggests: nginx
+Section: web
+Priority: optional
+Description: Folien (presentations: edit, present, export)
+ Creates, edits and presents slide decks in the browser: layouts in two
+ designs (Folien and Kanton Zürich), text, shapes, images and videos,
+ transitions and builds, a presenter console and a phone remote; exports
+ as PDF, PowerPoint and self-contained zip bundles. A dabscm web
+ application with its own Scheme runtime; needs PostgreSQL.

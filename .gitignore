@@ -6,3 +6,6 @@ tests/test-config.scm
 
 # Uploaded assets during development (data-dir).
 var/
+
+# Debian packages (packaging/package-deb.scm).
+releases/

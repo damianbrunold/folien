@@ -1,0 +1,39 @@
+folien (Folien) — Debian package notes
+=====================================
+
+Layout
+  /opt/folien/app            application (replaced on every upgrade)
+  /opt/folien/bin/scm        Scheme runtime launcher (bundled scm.jar)
+  /etc/folien/config.scm     configuration (created on first install, kept)
+  /etc/default/folien        optional: JAVA_OPTS="-Xmx2g"
+  /var/lib/folien/           data-dir: assets/ (images, videos), backups/,
+                             bundles/ (cache), tmp/
+  folien.service + health/restart/maintenance/backup timers; logs in journald
+
+First install
+  1. Database (local or remote PostgreSQL):
+       sudo -u postgres createuser -P folien
+       sudo -u postgres createdb -O folien folien
+  2. Edit /etc/folien/config.scm: db-* credentials, url-prefix if the app
+     is not at the host root. The service starts only once db-password is
+     no longer "change-me".
+  3. The first admin (applies the migrations):
+       sudo -u folien folien-admin seed-admin <name>
+  4. systemctl start folien.service folien-health.timer folien-restart.timer \
+       folien-maintenance.timer folien-backup.timer
+  5. Reverse proxy with TLS in front: /usr/share/doc/folien/nginx.conf.example
+     (client_max_body_size for uploads; buffering stays off for the event
+     streams of presenting).
+
+Upgrades
+  apt install ./folien_<version>_all.deb — migrations run when the service
+  starts.
+
+Backups
+  folien-backup.timer writes database dumps to /var/lib/folien/backups
+  nightly (backup-keep of them). Back up /var/lib/folien (dumps and
+  assets) with your file backup. Restore: gunzip -c <dump> | psql folien,
+  then put /var/lib/folien back.
+
+Tools
+  folien-admin <script>: seed-admin, gen-secret, maintenance, backup, server.

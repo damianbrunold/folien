@@ -14,7 +14,8 @@
           (scm crypto)
           (scm fs)
           (scm io)
-          (scm string))
+          (scm string)
+          (scheme process-context))
   (export load-config
           read-config
           create-config!
@@ -64,15 +65,20 @@ Description: Writes target as a copy of example, with each secret
       "Syntax: (load-config root args)
 Library: (app config)
 Description: Reads the config named by the first command-line argument in
-  args, or else root/config.scm. On the first run, when root/config.scm
-  does not exist yet, it is created from config.example.scm."
-      (if (pair? args)
-          (read-config (car args))
+  args, or else by the environment variable FOLIEN_CONFIG (the Debian
+  package's tools set it), or else root/config.scm. On the first run,
+  when root/config.scm does not exist yet, it is created from
+  config.example.scm."
+      (cond
+        ((pair? args) (read-config (car args)))
+        ((get-environment-variable "FOLIEN_CONFIG")
+         => (lambda (path) (read-config path)))
+        (else
           (let ((path (string-append root "/config.scm")))
             (unless (file-exists? path)
               (create-config! (string-append root "/config.example.scm") path)
               (display (string-append "created " path "\n") (current-error-port)))
-            (read-config path))))
+            (read-config path)))))
 
     (define (config-ref cfg name default)
       "Syntax: (config-ref cfg name default)

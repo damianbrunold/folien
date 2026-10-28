@@ -235,6 +235,16 @@ then put `data-dir` back.
 
 ## Deploy
 
-As in starter-admin: the app binds loopback only behind a TLS-terminating
-reverse proxy (`deploy/nginx.conf.example`); `sudo deploy/install.sh`
-installs it to `/opt/folien` with the config in `/etc/folien/config.scm`.
+**Debian package** (preferred): `scm packaging/package-deb.scm` builds
+`releases/folien_<version>_all.deb` from the current commit (pure Scheme,
+reproducible; bundles the dabscm runtime it was built with, the units
+and a default config). `apt install ./folien_<version>_all.deb`, then
+follow `/usr/share/doc/folien/README.Debian` (database, config, first
+admin with `folien-admin seed-admin <name>`, start the units).
+
+**Without a package**: `sudo deploy/install.sh` installs the checkout to
+`/opt/folien` with the config in `/etc/folien/config.scm` (as in
+starter-admin).
+
+Either way the app binds loopback only behind a TLS-terminating reverse
+proxy (`deploy/nginx.conf.example`).
