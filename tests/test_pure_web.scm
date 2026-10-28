@@ -59,6 +59,7 @@
   (test-equal "/login" (location (send app "GET" "/trash" #f)))
   (test-equal "/login" (location (send app "POST" "/decks" #f)))
   (test-equal "/login" (location (send app "GET" "/decks/abc" #f)))
+  (test-equal "/login" (location (send app "GET" "/decks/abc/edit" #f)))
   (test-equal "/login" (location (send app "POST" "/decks/abc/delete" #f))))
 
 (test-group "the API answers 401, not a redirect"

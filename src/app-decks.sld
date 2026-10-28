@@ -77,20 +77,21 @@ Description: Creates an active deck with a title slide and returns its id."
           (json->string (new-doc design-id title)))
         id))
 
-    (define (save-doc! db owner-id id base-revision doc design-id)
-      "Syntax: (save-doc! db owner-id id base-revision doc design-id)
+    (define (save-doc! db owner-id id base-revision doc design-id . title)
+      "Syntax: (save-doc! db owner-id id base-revision doc design-id [title])
 Library: (app decks)
-Description: Stores doc (already validated) and design for the owner's
-  active deck if its revision is still base-revision. Returns the new
-  revision, or #f when the deck changed in the meantime, is not active,
-  or does not exist."
+Description: Stores doc (already validated), design and, if given, title
+  (already validated) for the owner's active deck if its revision is
+  still base-revision. Returns the new revision, or #f when the deck
+  changed in the meantime, is not active, or does not exist."
       (db-scalar db
         (string-append "UPDATE presentations "
                        "SET doc = $1::jsonb, design = $2, revision = revision + 1, "
-                       "updated_at = now() "
+                       "title = COALESCE($6, title), updated_at = now() "
                        "WHERE id = $3 AND owner_id = $4 AND revision = $5 "
                        "AND status = 'active' RETURNING revision")
-        (json->string doc) design-id id (->int owner-id) (->int base-revision)))
+        (json->string doc) design-id id (->int owner-id) (->int base-revision)
+        (if (pair? title) (car title) 'null)))
 
     (define (rename-deck! db owner-id id title)
       (db-exec db

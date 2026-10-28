@@ -209,6 +209,19 @@ Description: Builds the app's request handler. settings is an alist:
                     (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
                                         (not-found-page (who user))))))))
 
+        ;; The editor; archived and trashed decks only have the viewer.
+        (route! "GET" "/decks/:id/edit"
+          (signed-in
+            (lambda (req params user)
+              (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                (cond
+                  ((not deck)
+                   (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
+                                       (not-found-page (who user))))
+                  ((not (string=? (col deck "status") "active"))
+                   (redirect (string-append "/decks/" (col deck "id"))))
+                  (else (html-response (editor-page deck))))))))
+
         (route! "POST" "/decks/:id/rename"
           (signed-in
             (lambda (req params user)
@@ -254,7 +267,7 @@ Description: Builds the app's request handler. settings is an alist:
                     (json-status 200 (deck->json deck))
                     (json-error 404 "no such deck"))))))
 
-        ;; Body: {"revision": n, "design": id, "doc": {...}}. Answers
+        ;; Body: {"revision": n, "design": id, "doc": {...}, "title"?}. Answers
         ;; 200 {"revision": new}, 400 for an invalid document, 403 for an
         ;; archived or trashed deck, 404, or 409 {"revision": current} when
         ;; someone saved in between.
@@ -274,10 +287,15 @@ Description: Builds the app's request handler. settings is an alist:
                   (else
                    (let* ((design (jref body "design" (col deck "design")))
                           (doc (jref body "doc"))
-                          (problem (validate-doc doc design)))
+                          (title (jref body "title"))
+                          (problem (if (and title (not (valid-title? title)))
+                                       "title: must be 1 to 200 characters"
+                                       (validate-doc doc design))))
                      (if problem
                          (json-error 400 problem)
-                         (let ((rev (save-doc! db owner id (jref body "revision") doc design)))
+                         (let ((rev (if title
+                                        (save-doc! db owner id (jref body "revision") doc design title)
+                                        (save-doc! db owner id (jref body "revision") doc design))))
                            (if rev
                                (json-status 200 `(("revision" . ,(->int rev))))
                                (json-status 409

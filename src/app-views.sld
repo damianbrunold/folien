@@ -9,7 +9,7 @@
           (app site)
           (app designs)
           (app users))            ; col
-  (export login-page decks-page deck-page profile-page admin-page
+  (export login-page decks-page deck-page editor-page profile-page admin-page
           error-page not-found-page)
   (begin
 
@@ -99,7 +99,9 @@
     (define (deck-actions status id)
       (cond
         ((string=? status "active")
-         (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Öffnen")
+         (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/edit"))))
+                  "Bearbeiten")
+               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
                (action-button id "/duplicate" "Duplizieren")
                (action-button id "/archive" "Archivieren")
                (action-button id "/trash" "Löschen" "small danger")))
@@ -118,7 +120,9 @@
         `(tr
           (td ,(if (string=? status "trashed")
                    (col deck "title")
-                   `(a (@ (href ,(url (string-append "/decks/" id)))) ,(col deck "title"))))
+                   `(a (@ (href ,(url (string-append "/decks/" id
+                                                     (if (string=? status "active") "/edit" "")))))
+                       ,(col deck "title"))))
           (td ,(design-name (col deck "design")))
           (td (@ (class "nowrap"))
               ,(format-time (if (string=? status "active")
@@ -209,6 +213,35 @@
                   ""))
           `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
           `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
+
+    ;; --- the editor ---------------------------------------------------
+    ;; A full-window application (static/js/editor.js) without the site
+    ;; header; the page only carries the URLs it needs.
+
+    (define (editor-page deck)
+      (let ((id (col deck "id")))
+        (string-append
+         (html->string
+          (html5
+           '(@ (lang "de"))
+           `(head
+             (meta (@ (charset "utf-8")))
+             (meta (@ (name "viewport") (content "width=device-width, initial-scale=1")))
+             (title ,(string-append (col deck "title") " · Folien"))
+             (link (@ (rel "icon") (href ,(asset "favicon.svg"))))
+             (link (@ (rel "stylesheet") (href ,(asset "css/app.css"))))
+             (link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
+             (link (@ (rel "stylesheet") (href ,(asset "css/editor.css"))))
+             (script (@ (src ,(asset "js/theme-init.js"))))
+             (script (@ (type "module") (src ,(asset "js/editor.js")))))
+           `(body (@ (class "editor-body"))
+              (div (@ (id "editor") (class "editor")
+                      (data-deck-url ,(url (string-append "/api/decks/" id)))
+                      (data-designs-url ,(url "/api/designs"))
+                      (data-view-url ,(url (string-append "/decks/" id)))
+                      (data-home-url ,(url "/")))
+                (noscript "Der Editor braucht JavaScript.")))))
+         "\n")))
 
     ;; --- profile ------------------------------------------------------
 

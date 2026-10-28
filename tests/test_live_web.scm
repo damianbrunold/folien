@@ -211,23 +211,37 @@
                                              `(("revision" . 2) ("design" . "folien") ("doc" . ,doc)))))
           (test-equal "folien" (jref (json-body (send "GET" api carol)) "design"))
 
+          ;; The editor page, and a title saved with the document.
+          (let ((r (send "GET" (string-append "/decks/" id "/edit") carol)))
+            (test-equal 200 (status r))
+            (test-assert (has? (body r) "id=\"editor\""))
+            (test-assert (has? (body r) "js/editor.js")))
+          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/edit") dave)))
+          (let ((r (send-json "PUT" api carol `(("revision" . 3) ("title" . "Neu") ("doc" . ,doc)))))
+            (test-equal 200 (status r))
+            (test-equal 4 (jref (json-body r) "revision"))
+            (test-equal "Neu" (jref (json-body (send "GET" api carol)) "title")))
+          (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("title" . "") ("doc" . ,doc)))))
+
           ;; Invalid documents are refused.
-          (let ((r (send-json "PUT" api carol `(("revision" . 3) ("doc" . (("format" . 1)))))))
+          (let ((r (send-json "PUT" api carol `(("revision" . 4) ("doc" . (("format" . 1)))))))
             (test-equal 400 (status r))
             (test-assert (has? (jref (json-body r) "error") "slides")))
           (test-equal 400 (status (send "PUT" api carol "not json")))
 
           ;; Archived decks are read-only, and come back when restored.
           (send "POST" (string-append "/decks/" id "/archive") carol)
-          (test-assert (not (has? (body (send "GET" "/" carol)) "Jahresbericht")))
-          (test-assert (has? (body (send "GET" "/archive" carol)) "Jahresbericht"))
-          (test-equal 403 (status (send-json "PUT" api carol `(("revision" . 3) ("doc" . ,doc)))))
+          (test-assert (not (has? (body (send "GET" "/" carol)) ">Neu<")))
+          (test-assert (has? (body (send "GET" "/archive" carol)) ">Neu<"))
+          (test-equal (string-append "/decks/" id)
+                      (location (send "GET" (string-append "/decks/" id "/edit") carol)))
+          (test-equal 403 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,doc)))))
           (send "POST" (string-append "/decks/" id "/restore") carol)
-          (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 3) ("doc" . ,doc)))))
+          (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,doc)))))
 
           ;; Duplicate and rename.
           (send "POST" (string-append "/decks/" id "/duplicate") carol)
-          (test-assert (has? (body (send "GET" "/" carol)) "Jahresbericht (Kopie)"))
+          (test-assert (has? (body (send "GET" "/" carol)) "Neu (Kopie)"))
           (send "POST" (string-append "/decks/" id "/rename") carol "title=Bericht+2026")
           (test-assert (has? (body (send "GET" "/" carol)) "Bericht 2026"))
 

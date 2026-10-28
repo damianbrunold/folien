@@ -18,7 +18,8 @@ Implemented step by step, phase by phase:
       trash, delete; document model with validation; JSON API with
       revision-checked saves
 - [x] Phase 2 — renderer (`static/js/render.js`) and read-only viewer
-- [ ] Phase 3 — editor
+- [x] Phase 3 — editor: slides, layouts, text (own rich-text editor), shapes,
+      lines, properties, undo/redo, autosave with conflict detection, notes
 - [ ] Phase 4 — assets (images, videos, paste)
 - [ ] Phase 5 — presenting (transitions, builds, presenter console)
 - [ ] Phase 6 — PDF export (slides, notes, handouts)
@@ -45,6 +46,9 @@ src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
+static/js/render.js   draws slides (viewer, editor, later player and exports)
+static/js/editor.js   the editor; richtext-*.js its text editing, doc-ops.js
+                      document operations
 migrations/           NNNN_*.sql, applied in order at startup
 static/               CSS, fonts (Inter, SIL OFL), favicon; js/render.js draws
                       slides (shared by viewer, editor, player), js/viewer.js
@@ -98,6 +102,15 @@ scm bin/dev-server.scm         # same, restarts when src/, migrations/ or the co
 
 ```sh
 for t in tests/test_pure_*.scm; do scm "$t" || exit 1; done
+```
+
+The browser code's pure modules (rich-text model, document operations)
+have node tests; the editor has browser tests that drive headless Firefox
+over WebDriver BiDi, with the API stubbed (no server or database needed):
+
+```sh
+node --test tests/js/
+node --experimental-websocket --test tests/browser/   # node 20; plain --test from node 22
 ```
 
 `tests/test_live_web.scm` runs the full flows against a real database. It

@@ -254,6 +254,12 @@ Description: The document of a new deck: one title slide with title as
                             (req el "w" path size? "not a size")
                             (opt el "h" path size? "not a size")))
              (opt el "rot" path (number-in? -360 360) "bad rotation")
+             (opt el "shape" path
+                  (one-of "rect" "rounded" "ellipse" "triangle" "arrow" "chevron") "unknown shape")
+             (opt el "fit" path (one-of "contain" "cover") "bad fit")
+             (opt el "flip" path boolean? "not a boolean")
+             (opt el "poster" path
+                  (lambda (a) (and (string? a) (<= 1 (string-length a) 128))) "bad poster reference")
              (opt el "asset" path
                   (lambda (a) (and (string? a) (<= 1 (string-length a) 128))) "bad asset reference")
              (opt el "alt" path
@@ -283,6 +289,7 @@ Description: The document of a new deck: one title slide with title as
                 (problem (string-append path ".id") "duplicate"))
            (req slide "layout" path valid-id? "bad layout id")
            (opt slide "hidden" path boolean? "not a boolean")
+           (opt slide "background" path color? "not a colour")
            (let ((tr (assoc "transition" slide)))
              (and tr (check-transition (cdr tr) (string-append path ".transition"))))
            (let ((n (assoc "notes" slide)))
