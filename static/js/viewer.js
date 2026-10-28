@@ -50,7 +50,8 @@ async function main() {
   let current = 0;
   let unfit = null;
   const byId = new Map(slides.map((s, i) => [s.id, i]));
-  const ctx = { onLink: (id) => byId.has(id) && show(byId.get(id)) };
+  const assetUrl = (sha) => root.dataset.deckUrl + "/assets/" + sha;
+  const ctx = { assetUrl, videoControls: true, onLink: (id) => byId.has(id) && show(byId.get(id)) };
 
   const thumbButtons = slides.map((slide, i) => {
     const b = el("button", "thumb");
@@ -61,7 +62,7 @@ async function main() {
     b.append(el("span", "num", String(i + 1)), f);
     b.addEventListener("click", () => show(i));
     thumbs.appendChild(b);
-    fitInto(f, renderSlide(slide, design, {}));
+    fitInto(f, renderSlide(slide, design, { assetUrl }));
     return b;
   });
 

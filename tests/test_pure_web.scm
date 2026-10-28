@@ -27,6 +27,7 @@
 (define (app-with prefix)
   (make-app `((url-prefix . ,prefix)
               (static-dir . ,(string-append root "/static"))
+              (data-dir . ,(mktempdir '(prefix . "folien-data")))
               (db . ,(make-db "127.0.0.1" 1 "nobody" "" "nothing" 1))
               (session-secret . ,(base64-encode (random-bytes 32)))
               (session-max-age . 3600)
@@ -66,6 +67,8 @@
   (test-equal 401 (status (send app "GET" "/api/decks/abc" #f)))
   (test-equal 401 (status (send app "PUT" "/api/decks/abc" #f)))
   (test-equal 401 (status (send app "GET" "/api/designs" #f)))
+  (test-equal 401 (status (send app "POST" "/api/decks/abc/assets" #f)))
+  (test-equal "/login" (location (send app "GET" (string-append "/api/decks/abc/assets/" (make-string 64 #\a)) #f)))
   (test-assert (has? (body (send app "GET" "/api/designs" #f)) "not signed in")))
 
 (test-group "German interface"
@@ -75,6 +78,8 @@
 (test-group "strict CSP holds"
   (let ((r (send app "GET" "/login" #f)))
     (test-assert (has? (http-response-header r "Content-Security-Policy") "style-src 'self'"))
+    (test-assert "dropped files can be previewed"
+      (has? (http-response-header r "Content-Security-Policy") "media-src 'self' blob:"))
     (test-assert "no inline script" (not (has? (body r) "<script>")))
     (test-assert "no style attribute" (not (has? (body r) " style=")))))
 

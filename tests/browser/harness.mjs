@@ -6,6 +6,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { extname, join, normalize } from "node:path";
 
 export const root = new URL("../..", import.meta.url).pathname;
@@ -25,10 +26,60 @@ export function designsJson() {
   return execFileSync("scm", [join(root, "tests/js/designs-json.scm")], { encoding: "utf8" });
 }
 
-// files: {"/path": "content"}. Returns {url, close}.
-export async function serve(files) {
+// A stand-in for the asset API of one deck (POST, list, file), keeping
+// uploads in memory: enough for the editor's upload code to run for real.
+export function assetApi(deckPath) {
+  const store = new Map(); // sha -> {mime, body, name, width, height}
+  const sniff = (b) =>
+    b[0] === 0x89 && b[1] === 0x50 ? "image/png"
+    : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg"
+    : b[0] === 0x1a && b[1] === 0x45 ? "video/webm"
+    : String(b.subarray(4, 8)) === "ftyp" ? "video/mp4"
+    : String(b.subarray(0, 4)) === "<svg" ? "image/svg+xml"
+    : null;
+  const handler = async (req, res, path, url) => {
+    if (path === deckPath + "/assets" && req.method === "POST") {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const body = Buffer.concat(chunks);
+      const mime = sniff(body);
+      if (!mime) {
+        res.writeHead(415).end("{}");
+        return true;
+      }
+      const sha = createHash("sha256").update(body).digest("hex");
+      const a = {
+        sha, mime, size: body.length, name: url.searchParams.get("name"),
+        width: Number(url.searchParams.get("w")) || null,
+        height: Number(url.searchParams.get("h")) || null,
+      };
+      store.set(sha, Object.assign({ body }, a));
+      res.writeHead(201, { "Content-Type": "application/json" }).end(JSON.stringify(a));
+      return true;
+    }
+    if (path === deckPath + "/assets" && req.method === "GET") {
+      const list = [...store.values()].map(({ body, ...a }) => a).reverse();
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(list));
+      return true;
+    }
+    if (path.startsWith(deckPath + "/assets/")) {
+      const a = store.get(path.slice(deckPath.length + 8));
+      if (!a) res.writeHead(404).end();
+      else res.writeHead(200, { "Content-Type": a.mime }).end(a.body);
+      return true;
+    }
+    return false;
+  };
+  return { store, handler };
+}
+
+// files: {"/path": "content"}; api: (req, res, path, url) -> true if it
+// answered. Returns {url, close}.
+export async function serve(files, api) {
   const server = createServer(async (req, res) => {
-    const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    const url = new URL(req.url, "http://x");
+    const path = decodeURIComponent(url.pathname);
+    if (api && (await api(req, res, path, url))) return;
     if (files[path] !== undefined) {
       res.writeHead(200, { "Content-Type": TYPES[extname(path)] || "text/html; charset=utf-8" });
       res.end(files[path]);
@@ -68,6 +119,7 @@ export function editorFiles(deck, designs) {
       const designs = ${designs};
       let revision = deck.revision;
       window.__puts = [];
+      const realFetch = window.fetch.bind(window);
       window.__putStatus = 200;
       const resp = (status, body) => ({ ok: status < 300, status, json: async () => body });
       window.fetch = async (url, opts = {}) => {
@@ -79,7 +131,8 @@ export function editorFiles(deck, designs) {
           return resp(200, { revision });
         }
         if (url === "/api/designs") return resp(200, designs);
-        return resp(200, Object.assign({}, deck, { revision }));
+        if (url === "/api/decks/d1") return resp(200, Object.assign({}, deck, { revision }));
+        return realFetch(url, opts);
       };`,
     "/edit.html": `<!doctype html><html lang="de"><head><meta charset="utf-8">
       <link rel="stylesheet" href="/static/css/app.css">

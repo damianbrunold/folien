@@ -31,7 +31,8 @@ mv "/opt/$APP.new" "/opt/$APP"
 mkdir -p "/etc/$APP"
 if [ ! -f "/etc/$APP/config.scm" ]; then
   "$SCM" "/opt/$APP/bin/init-config.scm" "/etc/$APP/config.scm"
-  sed -i 's|^(define secure-cookies? #f)|(define secure-cookies? #t)|' \
+  sed -i -e 's|^(define secure-cookies? #f)|(define secure-cookies? #t)|' \
+         -e 's|^(define data-dir "var")|(define data-dir "/var/lib/folien")|' \
          "/etc/$APP/config.scm"
   NEW_CONFIG=1
 fi

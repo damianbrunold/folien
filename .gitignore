@@ -3,3 +3,6 @@ config.scm
 
 # Config for tests/test_live_web.scm.
 tests/test-config.scm
+
+# Uploaded assets during development (data-dir).
+var/

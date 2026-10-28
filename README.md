@@ -20,7 +20,8 @@ Implemented step by step, phase by phase:
 - [x] Phase 2 — renderer (`static/js/render.js`) and read-only viewer
 - [x] Phase 3 — editor: slides, layouts, text (own rich-text editor), shapes,
       lines, properties, undo/redo, autosave with conflict detection, notes
-- [ ] Phase 4 — assets (images, videos, paste)
+- [x] Phase 4 — images and videos: upload, drag and drop, paste, image
+      placeholders, poster frames, media library, byte-range streaming
 - [ ] Phase 5 — presenting (transitions, builds, presenter console)
 - [ ] Phase 6 — PDF export (slides, notes, handouts)
 - [ ] Phase 7 — zip bundle export/import
@@ -44,6 +45,7 @@ src/app-auth.sld      sign-in, sessions, password changes
 src/app-designs.sld   the designs: colour and font tokens, layouts
 src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
+src/app-assets.sld    uploaded images and videos (content-addressed files)
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
 static/js/render.js   draws slides (viewer, editor, later player and exports)
@@ -68,6 +70,22 @@ coordinates are 1920 × 1080.
 The editor saves with `PUT /api/decks/<id>` and
 `{"revision": n, "design": id, "doc": {...}}`. The server validates the
 document and answers `409` when another save came first.
+
+## Images and videos
+
+Uploads go to `POST /api/decks/<id>/assets` (the file as the body). The
+server takes the type from the file's first bytes (PNG, JPEG, GIF, WebP,
+SVG, MP4, WebM) and stores each file once, named by its SHA-256, under
+`data-dir/assets`; decks link to the files they use. Bodies over 1 MB are
+spooled to disk by the HTTP server, so `max-upload-bytes` (default 1 GB)
+needs no memory. Files are served with byte ranges (videos seek) and,
+being content-addressed, cached for good; a sandbox CSP keeps an uploaded
+SVG from running script. The browser converts images to PNG or JPEG of at
+most 3840 px (what the PDF export embeds) and takes a poster frame of
+each video. Behind nginx, `client_max_body_size` must allow the uploads
+(`deploy/nginx.conf.example`).
+
+Needs dabscm 2.3.2 or later.
 
 ## Setup
 

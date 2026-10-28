@@ -288,3 +288,38 @@ body.editor-body { overflow: hidden; }
   .ed-main { grid-template-columns: 9rem 1fr; }
   .ed-panel { display: none; }
 }
+
+/* --- images and videos --------------------------------------------- */
+
+.ed-upload { font-size: 0.85rem; color: var(--accent); }
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.media-grid p { grid-column: 1 / -1; }
+.media-tile {
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  background: var(--row);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+.media-tile:hover { border-color: var(--accent); }
+.media-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-video { font-size: 1.4rem; color: var(--muted); }
+.ed-panel .field.stacked { flex-direction: column; align-items: stretch; }
+.alt-text {
+  width: 100%;
+  padding: 0.35rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  resize: vertical;
+}
+.ed-panel > .panel-section > button.small { margin: 0.2rem 0 0.5rem; }

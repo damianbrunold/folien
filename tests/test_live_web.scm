@@ -38,9 +38,11 @@
     (make-db (config-ref cfg 'db-host "127.0.0.1") (config-ref cfg 'db-port 5432)
              (config-ref cfg 'db-user "") (config-ref cfg 'db-password "")
              (config-ref cfg 'db-name "") 2))
+  (define data-dir (mktempdir '(prefix . "folien-live-data")))
   (define app
     (make-app `((url-prefix . "")
                 (static-dir . ,(string-append root "/static"))
+                (data-dir . ,data-dir)
                 (db . ,db)
                 (session-secret . ,(base64-encode (random-bytes 32)))
                 (session-max-age . 3600)
@@ -74,6 +76,14 @@
                     '(("Content-Type" . "application/json")))
             (json->string value)))))
   (define (json-body r) (json-parse (body r)))
+  (define (filter-decks db title)
+    (db-rows db "SELECT id FROM presentations WHERE title = $1" title))
+  (define (send-bytes method url cookie bytes)
+    (parameterize ((log-port (open-output-string)))
+      (app (make-http-request method url
+                              (append (if cookie (list (cons "Cookie" cookie)) '())
+                                      '(("Content-Type" . "application/octet-stream")))
+                              bytes))))
   (define (status r) (http-response-status r))
   ;; The deck id from a redirect to /decks/<id>.
   (define (deck-id-of r) (substring (location r) 7 (string-length (location r))))
@@ -81,7 +91,7 @@
                            (if (number? id) (number->string id) id)))
 
   ;; A fresh schema, and an admin as bin/seed-admin.scm makes one.
-  (db-exec db "DROP TABLE IF EXISTS presentations, user_roles, roles, users, schema_migrations")
+  (db-exec db "DROP TABLE IF EXISTS presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
   (parameterize ((log-port (open-output-string)))
     (migrate! db (string-append root "/migrations")))
   (with-db-transaction db
@@ -223,8 +233,66 @@
             (test-equal "Neu" (jref (json-body (send "GET" api carol)) "title")))
           (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("title" . "") ("doc" . ,doc)))))
 
+          ;; Assets: upload, list, fetch (with ranges), use in the document.
+          (let* ((png (bytevector-append
+                       (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A)
+                       (make-bytevector 100 1)))
+                 (up (send-bytes "POST" (string-append api "/assets?name=a%2Fb.png&w=10&h=20") carol png))
+                 (asset (json-body up))
+                 (sha (jref asset "sha"))
+                 (asset-url (string-append api "/assets/" sha)))
+            (test-equal 201 (status up))
+            (test-equal "image/png" (jref asset "mime"))
+            (test-equal "b.png" (jref asset "name"))
+            (test-equal 108 (jref asset "size"))
+            (test-equal 10 (jref asset "width"))
+            (test-equal 64 (string-length sha))
+            ;; the same file again: one asset
+            (send-bytes "POST" (string-append api "/assets?name=again.png") carol png)
+            (test-equal 1 (vector-length (json-body (send "GET" (string-append api "/assets") carol))))
+            (let ((r (send "GET" asset-url carol)))
+              (test-equal 200 (status r))
+              (test-equal "image/png" (http-response-header r "Content-Type"))
+              (test-assert (has? (http-response-header r "Content-Security-Policy") "sandbox"))
+              (test-assert (has? (http-response-header r "Cache-Control") "immutable"))
+              (test-equal png (http-response-body r)))
+            (let ((r (parameterize ((log-port (open-output-string)))
+                       (app (make-http-request "GET" asset-url
+                                               (list (cons "Cookie" carol) '("Range" . "bytes=0-3"))
+                                               #f)))))
+              (test-equal 206 (status r))
+              (test-equal (bytevector #x89 #x50 #x4E #x47) (http-response-body r)))
+            ;; Not for other users, not for unknown hashes.
+            (test-equal 404 (status (send "GET" asset-url dave)))
+            (test-equal 404 (status (send "GET" (string-append api "/assets/" (make-string 64 #\0)) carol)))
+            (test-equal 404 (status (send-bytes "POST" (string-append api "/assets") dave png)))
+            (test-equal 415 (status (send-bytes "POST" (string-append api "/assets") carol
+                                                (string->utf8 "#!/bin/sh"))))
+            (test-equal 400 (status (send-bytes "POST" (string-append api "/assets") carol (bytevector))))
+            ;; An SVG is recognised as such.
+            (test-equal "image/svg+xml"
+              (jref (json-body (send-bytes "POST" (string-append api "/assets?name=x.svg") carol
+                                           (string->utf8 "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>")))
+                    "mime"))
+            ;; The document may use it; a bad reference is refused.
+            (let* ((slide (vector-ref (doc-slides doc) 0))
+                   (img `(("id" . "img1") ("type" . "image") ("x" . 0) ("y" . 0) ("w" . 100) ("h" . 100)
+                          ("asset" . ,sha)))
+                   (with-img (lambda (a)
+                               `(("format" . 1)
+                                 ("slides" . ,(vector
+                                               (map (lambda (p)
+                                                      (if (equal? (car p) "elements")
+                                                          (cons "elements" (vector (map (lambda (q) (if (equal? (car q) "asset") (cons "asset" a) q)) img)))
+                                                          p))
+                                                    slide)))))))
+              (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,(with-img "../../etc/passwd"))))))
+              (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,(with-img sha))))))
+              (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 5) ("doc" . ,doc))))))
+            (test-assert (file-exists? (string-append data-dir "/assets/" (substring sha 0 2) "/" sha))))
+
           ;; Invalid documents are refused.
-          (let ((r (send-json "PUT" api carol `(("revision" . 4) ("doc" . (("format" . 1)))))))
+          (let ((r (send-json "PUT" api carol `(("revision" . 6) ("doc" . (("format" . 1)))))))
             (test-equal 400 (status r))
             (test-assert (has? (jref (json-body r) "error") "slides")))
           (test-equal 400 (status (send "PUT" api carol "not json")))
@@ -235,12 +303,16 @@
           (test-assert (has? (body (send "GET" "/archive" carol)) ">Neu<"))
           (test-equal (string-append "/decks/" id)
                       (location (send "GET" (string-append "/decks/" id "/edit") carol)))
-          (test-equal 403 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,doc)))))
+          (test-equal 403 (status (send-json "PUT" api carol `(("revision" . 6) ("doc" . ,doc)))))
+          (test-equal 403 (status (send-bytes "POST" (string-append api "/assets") carol (bytevector #xFF #xD8 #xFF 0))))
           (send "POST" (string-append "/decks/" id "/restore") carol)
-          (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,doc)))))
+          (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 6) ("doc" . ,doc)))))
 
           ;; Duplicate and rename.
           (send "POST" (string-append "/decks/" id "/duplicate") carol)
+          ;; the copy has the assets too
+          (let ((copy-id (col (car (filter-decks db "Neu (Kopie)")) "id")))
+            (test-equal 2 (vector-length (json-body (send "GET" (string-append "/api/decks/" copy-id "/assets") carol)))))
           (test-assert (has? (body (send "GET" "/" carol)) "Neu (Kopie)"))
           (send "POST" (string-append "/decks/" id "/rename") carol "title=Bericht+2026")
           (test-assert (has? (body (send "GET" "/" carol)) "Bericht 2026"))

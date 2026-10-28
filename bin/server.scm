@@ -17,7 +17,7 @@
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app config) (app db) (app web))
+(import (app config) (app db) (app assets) (app web))
 
 (define cfg (load-config root (cdr (command-line))))
 (define host (config-ref cfg 'http-host "127.0.0.1"))
@@ -34,10 +34,14 @@
 
 (migrate! db (resolve-path root "migrations"))
 
+(define data-dir (resolve-path root (config-ref cfg 'data-dir "var")))
+(ensure-asset-dir data-dir)
+
 (define app
   (make-app
    `((url-prefix      . ,prefix)
      (static-dir      . ,(resolve-path root (config-ref cfg 'static-dir "static")))
+     (data-dir        . ,data-dir)
      (db              . ,db)
      (session-secret  . ,(config-secret cfg 'session-secret))
      (session-max-age . ,(config-ref cfg 'session-max-age (* 60 60 24 7)))
@@ -45,4 +49,6 @@
 
 (log-info "app" (string-append "folien listening on http://" host ":"
                                (number->string port) prefix "/"))
-(serve-forever port app 0 host)
+;; Uploads up to max-upload-bytes; the server spools bodies over 1 MB to
+;; temporary files.
+(serve-forever port app 0 host 0 (config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))

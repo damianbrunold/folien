@@ -30,11 +30,14 @@ StandardOutput=journal
 StandardError=journal
 
 # --- hardening ---
-# All state lives in PostgreSQL: the whole file system is read-only for
-# the app.
+# State lives in PostgreSQL and, for uploaded images and videos, in
+# /var/lib/folien (StateDirectory creates it, owned by the service user);
+# the rest of the file system is read-only for the app. Large uploads are
+# spooled to the private /tmp.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
+StateDirectory=folien
 ProtectHome=yes
 
 [Install]

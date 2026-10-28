@@ -33,3 +33,11 @@
 
 ;; Relative to the app directory.
 (define static-dir "static")
+
+;; Uploaded images and videos go to data-dir/assets; relative to the app
+;; directory unless absolute. deploy/install.sh sets /var/lib/folien.
+(define data-dir "var")
+
+;; The largest upload, in bytes. Bodies above 1 MB are spooled to a
+;; temporary file, so this does not need memory.
+(define max-upload-bytes (* 1024 1024 1024))

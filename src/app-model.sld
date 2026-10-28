@@ -153,6 +153,15 @@ Description: The document of a new deck: one title slide with title as
     (define color-tokens
       '("background" "text" "muted" "accent" "accent2" "accent3" "light" "on-accent"))
 
+    ;; Assets are referred to by the SHA-256 of their content.
+    (define (sha? s)
+      (and (string? s)
+           (= (string-length s) 64)
+           (let loop ((i 0))
+             (or (= i 64)
+                 (and (memv (string-ref s i) (string->list "0123456789abcdef"))
+                      (loop (+ i 1)))))))
+
     (define (color? s)
       (or (hex-color? s) (and (member s color-tokens) #t) (equal? s "none")))
 
@@ -258,10 +267,11 @@ Description: The document of a new deck: one title slide with title as
                   (one-of "rect" "rounded" "ellipse" "triangle" "arrow" "chevron") "unknown shape")
              (opt el "fit" path (one-of "contain" "cover") "bad fit")
              (opt el "flip" path boolean? "not a boolean")
-             (opt el "poster" path
-                  (lambda (a) (and (string? a) (<= 1 (string-length a) 128))) "bad poster reference")
-             (opt el "asset" path
-                  (lambda (a) (and (string? a) (<= 1 (string-length a) 128))) "bad asset reference")
+             (opt el "poster" path sha? "bad poster reference")
+             (opt el "autoplay" path boolean? "not a boolean")
+             (opt el "loop" path boolean? "not a boolean")
+             (opt el "muted" path boolean? "not a boolean")
+             (opt el "asset" path sha? "bad asset reference")
              (opt el "alt" path
                   (lambda (a) (and (string? a) (<= (string-length a) 2000))) "bad alt text")
              (let ((s (assoc "style" el)))

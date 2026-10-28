@@ -22,6 +22,7 @@ import {
 import * as rt from "./richtext-model.js";
 import { RichTextEditor } from "./richtext-editor.js";
 import * as ops from "./doc-ops.js";
+import * as up from "./upload.js";
 
 const root = document.getElementById("editor");
 const urls = root.dataset;
@@ -54,6 +55,7 @@ const layout = () => findLayout(design, slide().layout);
 const findEl = (id) => slide().elements.find((e) => e.id === id);
 const resolved = (el) => resolveElement(layout(), el);
 const selectedEls = () => sel.map(findEl).filter(Boolean);
+const assetUrl = (sha) => urls.deckUrl + "/assets/" + sha;
 
 // --- DOM helpers ----------------------------------------------------
 
@@ -355,6 +357,7 @@ function buildSkeleton() {
     } else ui.title.value = deck.title;
   });
   ui.status = h("span", { class: "ed-status saved", text: "Gespeichert", role: "status" });
+  ui.uploadStatus = h("span", { class: "ed-upload", role: "status" });
   ui.banner = h("div", { class: "ed-banner", hidden: true, role: "alert" });
 
   const top = h(
@@ -363,6 +366,7 @@ function buildSkeleton() {
     h("a", { class: "ed-home", href: urls.homeUrl, title: "Zu den Präsentationen", text: "Folien" }),
     ui.title,
     ui.status,
+    ui.uploadStatus,
     h("span", { class: "spacer" }),
     h("a", { class: "button small", href: urls.viewUrl, text: "Ansehen" }),
   );
@@ -467,6 +471,7 @@ function buildToolbar() {
     group(ui.newSlide),
     group(
       tb("T", "Textfeld einfügen", insertTextBox),
+      tb("🖼", "Bild oder Video einfügen", () => pickFiles(true, (files) => insertMedia(files))),
       ui.shapeSelect,
       tb("╱", "Linie einfügen", insertLine),
     ),
@@ -636,7 +641,7 @@ function renderCanvas() {
     renderOverlay();
     return;
   }
-  const el = renderSlide(slide(), design, { editing: true });
+  const el = renderSlide(slide(), design, { editing: true, assetUrl });
   el.style.transform = "scale(" + scale + ")";
   ui.frame.replaceChildren(el);
   renderOverlay();
@@ -722,6 +727,25 @@ function wireStage() {
     const id = hitTest(toSlide(e));
     const el = id && findEl(id);
     if (el && el.type === "text" && !(editing && editing.id === id)) startEditing(id, false, e);
+    else if (el && (el.type === "image" || el.type === "video")) {
+      pickFiles(false, (files) => insertMedia(files, null, el.id));
+    }
+  });
+  ui.stage.addEventListener("dragover", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  });
+  ui.stage.addEventListener("drop", (e) => {
+    const files = up.mediaFiles(e.dataTransfer && e.dataTransfer.files);
+    if (!files.length) return;
+    e.preventDefault();
+    const pt = toSlide(e);
+    // Dropped on an image or video: replace it.
+    const id = hitTest(pt);
+    const target = id && findEl(id);
+    insertMedia(files, pt, target && (target.type === "image" || target.type === "video") ? id : null);
   });
 }
 
@@ -922,6 +946,13 @@ function startEditing(id, selectAll, clickEvent) {
         stopEditing();
       } else globalKeys(e);
     },
+    pasteFiles: (files) => {
+      const media = up.mediaFiles(files);
+      if (media.length) {
+        stopEditing();
+        insertMedia(media);
+      }
+    },
   });
   editing = { id, ed, box };
   box.classList.add("is-editing");
@@ -1069,7 +1100,7 @@ const unfits = new WeakMap();
 function drawThumb(frame, s) {
   const prev = unfits.get(frame);
   if (prev) prev();
-  unfits.set(frame, fitInto(frame, renderSlide(s, design, {})));
+  unfits.set(frame, fitInto(frame, renderSlide(s, design, { assetUrl })));
 }
 
 const thumbTimers = new Map();
@@ -1283,6 +1314,178 @@ function alignSelected(kind) {
   });
 }
 
+// --- images and videos ----------------------------------------------
+
+let mediaLibrary = null; // the deck's assets, once loaded
+
+function pickFiles(multiple, then) {
+  const input = h("input", { type: "file", accept: up.ACCEPT, multiple });
+  input.addEventListener("change", () => {
+    const files = up.mediaFiles(input.files);
+    if (files.length) then(files);
+  });
+  input.click();
+}
+
+function showUpload(text) {
+  ui.uploadStatus.textContent = text || "";
+}
+
+// Uploads a file (and a video's poster); resolves with
+// {asset, poster, width, height, video}.
+async function uploadMedia(file, n, total) {
+  const label = total > 1 ? " (" + n + "/" + total + ")" : "";
+  const progress = (f) => showUpload("Lädt hoch" + label + " … " + Math.round(f * 100) + " %");
+  progress(0);
+  if (up.isVideo(file)) {
+    const poster = await up.videoPoster(file, file.name);
+    const posterAsset = await up.upload(urls.deckUrl, poster.blob, poster.name, poster);
+    const asset = await up.upload(urls.deckUrl, file, file.name || "video", poster, progress);
+    return { asset, poster: posterAsset, width: poster.width, height: poster.height, video: true };
+  }
+  const img = await up.prepareImage(file);
+  const asset = await up.upload(urls.deckUrl, img.blob, img.name, img, progress);
+  return { asset, width: img.width, height: img.height, video: false };
+}
+
+// The geometry of new media: at most 1200 x 700, keeping the aspect
+// ratio, centred on at (a slide point) or the slide, inside the slide.
+function mediaBox(width, height, at) {
+  const s = Math.min(1, 1200 / width, 700 / height);
+  const w = Math.max(20, Math.round(width * s));
+  const hh = Math.max(20, Math.round(height * s));
+  const cx = at ? at.x : SLIDE_W / 2;
+  const cy = at ? at.y : SLIDE_H / 2;
+  return {
+    x: Math.round(Math.min(Math.max(0, cx - w / 2), SLIDE_W - w)),
+    y: Math.round(Math.min(Math.max(0, cy - hh / 2), SLIDE_H - hh)),
+    w,
+    h: hh,
+  };
+}
+
+function setMedia(el, m) {
+  el.type = m.video ? "video" : "image";
+  el.asset = m.asset.sha;
+  if (m.poster) el.poster = m.poster.sha;
+  else delete el.poster;
+  if (!m.video) {
+    for (const k of ["autoplay", "loop", "muted"]) delete el[k];
+  }
+}
+
+// Uploads files and puts them on the current slide: into the element
+// target (replacing its media), else into an empty image placeholder of
+// the slide, else as new elements (at, a slide point, or centred).
+async function insertMedia(files, at, target) {
+  if (editing) stopEditing();
+  const slideId = slide().id;
+  let n = 0;
+  for (const file of files) {
+    n += 1;
+    let m;
+    try {
+      m = await uploadMedia(file, n, files.length);
+    } catch (err) {
+      showUpload("");
+      window.alert((file.name ? file.name + ": " : "") + err.message);
+      continue;
+    }
+    mediaLibrary = null;
+    // The user may have moved on to another slide meanwhile.
+    const s = doc.slides.find((x) => x.id === slideId) || slide();
+    change(() => {
+      let el = target && s.elements.find((x) => x.id === target);
+      if (!el) {
+        el = s.elements.find((x) => x.placeholder && (x.type === "image" || x.type === "video") && !x.asset);
+      }
+      if (el) {
+        setMedia(el, m);
+      } else {
+        el = Object.assign({ id: ops.newId() }, mediaBox(m.width, m.height, at));
+        setMedia(el, m);
+        s.elements.push(el);
+      }
+      sel = [el.id];
+      target = null; // only the first file replaces
+    });
+  }
+  showUpload("");
+}
+
+async function insertFromLibrary(asset) {
+  const video = asset.mime.startsWith("video/");
+  let poster = null;
+  let width = asset.width || 800;
+  let height = asset.height || 600;
+  if (video) {
+    try {
+      const p = await up.videoPoster(assetUrl(asset.sha), asset.name);
+      poster = await up.upload(urls.deckUrl, p.blob, p.name, p);
+      width = p.width;
+      height = p.height;
+    } catch (err) {
+      window.alert(err.message);
+      return;
+    }
+  }
+  change(() => {
+    const el = Object.assign({ id: ops.newId() }, mediaBox(width, height, null));
+    setMedia(el, { asset, poster, video });
+    slide().elements.push(el);
+    sel = [el.id];
+  });
+}
+
+// The deck's images and videos for the panel (posters left out).
+function librarySection() {
+  const grid = h("div", { class: "media-grid" });
+  const fill = (assets) => {
+    const shown = assets.filter((a) => !a.name.endsWith(".poster.jpg"));
+    if (!shown.length) {
+      grid.replaceChildren(h("p", { class: "muted small", text: "Noch keine Bilder oder Videos." }));
+      return;
+    }
+    grid.replaceChildren(
+      ...shown.map((a) =>
+        h(
+          "button",
+          {
+            type: "button",
+            class: "media-tile",
+            title: a.name,
+            "aria-label": a.name + " einfügen",
+            on: { click: () => insertFromLibrary(a) },
+          },
+          a.mime.startsWith("video/")
+            ? h("span", { class: "media-video", text: "▶" })
+            : h("img", { src: assetUrl(a.sha), alt: "", loading: "lazy" }),
+        ),
+      ),
+    );
+  };
+  if (mediaLibrary) fill(mediaLibrary);
+  else {
+    grid.append(h("p", { class: "muted small", text: "Lädt …" }));
+    up.listAssets(urls.deckUrl)
+      .then((list) => {
+        mediaLibrary = list;
+        fill(list);
+      })
+      .catch(() => grid.replaceChildren(h("p", { class: "muted small", text: "Nicht verfügbar." })));
+  }
+  return section(
+    "Bilder und Videos",
+    grid,
+    h("button", {
+      type: "button",
+      class: "small",
+      text: "Hochladen …",
+      on: { click: () => pickFiles(true, (files) => insertMedia(files)) },
+    }),
+  );
+}
+
 // --- clipboard (elements) -------------------------------------------
 
 const CLIP_PREFIX = "folien-elements:";
@@ -1308,6 +1511,12 @@ function copyElements(e, cut) {
 
 document.addEventListener("paste", (e) => {
   if (e.defaultPrevented || editing || inFormField(e.target)) return;
+  const files = up.clipboardMedia(e.clipboardData);
+  if (files.length) {
+    e.preventDefault();
+    insertMedia(files);
+    return;
+  }
   const data = e.clipboardData.getData("text/plain");
   if (!data) return;
   e.preventDefault();
@@ -1500,6 +1709,7 @@ function renderPanel() {
   );
 
   const els = selectedEls();
+  if (els.length === 0) parts.push(librarySection());
   if (els.length === 1) parts.push(elementSection(els[0]));
   else if (els.length > 1) {
     const btn = (label, title, kind) =>
@@ -1641,11 +1851,45 @@ function elementSection(el) {
     );
   }
   if (el.type === "image" || el.type === "video") {
+    const check = (key, label) =>
+      h(
+        "label",
+        { class: "check" },
+        h("input", {
+          type: "checkbox",
+          checked: !!el[key],
+          on: { change: (e) => change(() => (e.target.checked ? (el[key] = true) : delete el[key])) },
+        }),
+        " " + label,
+      );
+    const alt = h("textarea", {
+      class: "alt-text",
+      rows: 2,
+      maxLength: 2000,
+      value: el.alt || "",
+      placeholder: "Was zeigt das Bild? (für Screenreader)",
+      "aria-label": "Alternativtext",
+    });
+    alt.addEventListener("change", () =>
+      change(() => {
+        if (alt.value.trim()) el.alt = alt.value.trim();
+        else delete el.alt;
+      }),
+    );
     children.push(
+      h("button", {
+        type: "button",
+        class: "small",
+        text: el.asset ? "Ersetzen …" : "Datei wählen …",
+        on: { click: () => pickFiles(false, (files) => insertMedia(files, null, el.id)) },
+      }),
       selectField("Einpassen", el.fit || "contain", [["contain", "Ganz zeigen"], ["cover", "Füllen"]], (v) =>
         change(() => (el.fit = v)),
       ),
-      h("p", { class: "muted small", text: "Bilder und Videos hochladen folgt in Phase 4." }),
+      el.type === "image" ? h("label", { class: "field stacked" }, h("span", { text: "Alternativtext" }), alt) : null,
+      el.type === "video" ? check("autoplay", "Beim Zeigen abspielen") : null,
+      el.type === "video" ? check("loop", "Endlos wiederholen") : null,
+      el.type === "video" ? check("muted", "Ton aus") : null,
     );
   }
   children.push(

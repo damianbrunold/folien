@@ -16,6 +16,7 @@
           (app model))
   (export list-decks
           load-deck
+          deck-status
           deck-doc
           create-deck!
           save-doc!
@@ -58,6 +59,14 @@ Description: The owner's deck row with id, including doc (as JSON text),
         (string-append "SELECT " summary-columns ", doc::text AS doc FROM presentations "
                        "WHERE id = $1 AND owner_id = $2")
         id (->int owner-id)))
+
+    (define (deck-status db owner-id id)
+      "Syntax: (deck-status db owner-id id)
+Library: (app decks)
+Description: The status of the owner's deck with id (\"active\",
+  \"archived\", \"trashed\"), or #f if the owner has no such deck."
+      (db-scalar db "SELECT status FROM presentations WHERE id = $1 AND owner_id = $2"
+                 id (->int owner-id)))
 
     (define (deck-doc deck)
       "Syntax: (deck-doc deck)
@@ -113,16 +122,27 @@ Description: Moves the owner's deck to status (\"active\", \"archived\" or
     (define (duplicate-deck! db owner-id id title)
       "Syntax: (duplicate-deck! db owner-id id title)
 Library: (app decks)
-Description: Copies the owner's deck as a new active deck named title and
-  returns the new id, or #f if there is no such deck."
+Description: Copies the owner's deck, with the links to its assets, as a
+  new active deck named title and returns the new id, or #f if there is
+  no such deck."
       (let ((new-id (uuidgen)))
-        (and (db-scalar db
-               (string-append
-                "INSERT INTO presentations (id, owner_id, title, design, doc) "
-                "SELECT $1, owner_id, $2, design, doc FROM presentations "
-                "WHERE id = $3 AND owner_id = $4 RETURNING id")
-               new-id title id (->int owner-id))
-             new-id)))
+        (with-db-transaction db
+          (lambda (tx)
+            (and (db-scalar tx
+                   (string-append
+                    "INSERT INTO presentations (id, owner_id, title, design, doc) "
+                    "SELECT $1, owner_id, $2, design, doc FROM presentations "
+                    "WHERE id = $3 AND owner_id = $4 RETURNING id")
+                   new-id title id (->int owner-id))
+                 ;; The copy may use the same images and videos.
+                 (begin
+                   (db-exec tx
+                     (string-append
+                      "INSERT INTO presentation_assets (presentation_id, sha256, name) "
+                      "SELECT $1, sha256, name FROM presentation_assets "
+                      "WHERE presentation_id = $2")
+                     new-id id)
+                   new-id))))))
 
     (define (delete-deck! db owner-id id)
       "Syntax: (delete-deck! db owner-id id)

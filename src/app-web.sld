@@ -32,6 +32,7 @@
           (app designs)
           (app model)
           (app decks)
+          (app assets)
           (app views))
   (export make-app admin-role)
   (begin
@@ -110,16 +111,56 @@
         ("revision" . ,(->int (col deck "revision")))
         ("doc" . ,(deck-doc deck))))
 
+    ;; --- assets ---------------------------------------------------------
+
+    (define (number-or-null v)
+      (cond ((number? v) v)
+            ((and (string? v) (string->number v)) => (lambda (n) n))
+            (else 'null)))
+
+    (define (asset->json row)
+      `(("sha" . ,(col row "sha256"))
+        ("mime" . ,(col row "mime"))
+        ("size" . ,(number-or-null (col row "size")))
+        ("width" . ,(number-or-null (col row "width")))
+        ("height" . ,(number-or-null (col row "height")))
+        ("name" . ,(col row "name"))))
+
+    ;; The client's file name, without directories, at most 200 characters.
+    (define (clean-name s)
+      (let* ((s (or s "upload"))
+             (base (let loop ((i (- (string-length s) 1)))
+                     (cond ((< i 0) s)
+                           ((memv (string-ref s i) '(#\/ #\\)) (substring s (+ i 1) (string-length s)))
+                           (else (loop (- i 1))))))
+             (base (if (string=? base "") "upload" base)))
+        (if (> (string-length base) 200) (substring base 0 200) base)))
+
+    ;; Assets are content-addressed, so a URL never changes its content:
+    ;; cached for good. The sandbox policy keeps an uploaded SVG opened on
+    ;; its own from running script.
+    (define asset-csp "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+
+;; The default policy of (scm net http middleware), plus blob: images
+    ;; and media: the editor reads dropped files through object URLs.
+    (define csp
+      (string-append "default-src 'self'; script-src 'self'; style-src 'self'; "
+                     "img-src 'self' data: blob:; media-src 'self' blob:; "
+                     "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
+                     "base-uri 'none'; object-src 'none'"))
+
     (define (make-app settings)
       "Syntax: (make-app settings)
 Library: (app web)
 Description: Builds the app's request handler. settings is an alist:
-  url-prefix, static-dir (absolute path), db (from make-db),
-  session-secret, session-max-age (seconds), secure-cookies?."
+  url-prefix, static-dir (absolute path), data-dir (absolute path, for
+  uploaded assets), db (from make-db), session-secret, session-max-age
+  (seconds), secure-cookies?."
       (let* ((site (make-site (setting settings 'url-prefix)
                               (setting settings 'static-dir)))
              (prefix (site-prefix site))
              (db (setting settings 'db))
+             (data-dir (setting settings 'data-dir))
              (auth (make-auth
                     (make-session-config
                      cookie-name
@@ -303,6 +344,55 @@ Description: Builds the app's request handler. settings is an alist:
                                    ("revision" . ,(->int (col (load-deck db owner id)
                                                               "revision")))))))))))))))
 
+;; --- assets ---
+
+        ;; Body: the file. Query: name, and the client's w and h (pixels).
+        ;; 201 with the asset; 400 empty, 403 read-only deck, 404, 413 too
+        ;; large (from the server), 415 a type that is not accepted.
+        (route! "POST" "/api/decks/:id/assets"
+          (api-signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (status (deck-status db (col user "id") id))
+                     (q (url-query-params (http-request-url req)))
+                     (qref (lambda (k) (let ((p (assoc k q))) (and p (cdr p))))))
+                (cond
+                  ((not status) (json-error 404 "no such deck"))
+                  ((not (string=? status "active")) (json-error 403 "deck is read-only"))
+                  (else
+                   (let ((r (store-upload! db data-dir id req (clean-name (qref "name"))
+                                           (qref "w") (qref "h"))))
+                     (cond
+                       ((eq? r 'empty) (json-error 400 "empty upload"))
+                       ((eq? r 'unsupported)
+                        (json-error 415 "unsupported file type (PNG, JPEG, GIF, WebP, SVG, MP4, WebM)"))
+                       (else (json-status 201 (asset->json r)))))))))))
+
+        (route! "GET" "/api/decks/:id/assets"
+          (api-signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (if (deck-status db (col user "id") id)
+                    (json-status 200 (list->vector (map asset->json (list-deck-assets db id))))
+                    (json-error 404 "no such deck"))))))
+
+        ;; The file, with byte ranges (videos seek).
+        (route! "GET" "/api/decks/:id/assets/:sha"
+          (signed-in
+            (lambda (req params user)
+              (let* ((sha (params-ref params "sha"))
+                     (row (deck-asset db (col user "id") (params-ref params "id") sha)))
+                (if (not row)
+                    (http-not-found)
+                    (let ((r (file-response (asset-file data-dir sha)
+                                            `((request . ,req)
+                                              (content-type . ,(col row "mime"))
+                                              (cache-control . "private, max-age=31536000, immutable")))))
+                      (http-response-with-headers
+                       r (http-response-status r)
+                       (cons (cons "Content-Security-Policy" asset-csp)
+                             (http-response-headers r)))))))))
+
         ;; --- sign-in ---
 
         (route! "GET" "/login"
@@ -435,4 +525,5 @@ Description: Builds the app's request handler. settings is an alist:
          (with-security-headers
           (with-site site
            (with-error-handler (router->handler router)
-                               (lambda (req) (html-response (error-page)))))))))))
+                               (lambda (req) (html-response (error-page)))))
+          csp))))))

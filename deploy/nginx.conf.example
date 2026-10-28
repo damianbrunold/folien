@@ -18,6 +18,11 @@ server {
     # (define url-prefix "/team") in the config and use
     # "location /team/" here. proxy_pass without a URI part passes
     # the path through unchanged, which is what the app expects.
+    # Uploads (images, videos) up to the app's max-upload-bytes; passed on
+    # as they arrive instead of being buffered by nginx first.
+    client_max_body_size    1g;
+    proxy_request_buffering off;
+
     location / {
         proxy_pass         http://folien_backend;
         proxy_http_version 1.1;
@@ -26,6 +31,7 @@ server {
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 30s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }

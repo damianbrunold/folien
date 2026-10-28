@@ -12,6 +12,7 @@
 //     change(text),             // changed
 //     selectionChange(),        // caret or selection moved
 //     keydown(e),               // keys the editor does not handle
+//     pasteFiles(files),        // files were pasted (images, videos)
 //   });
 //   ed.focus(); ed.toggleMark("b"); ed.destroy();
 
@@ -317,6 +318,15 @@ export class RichTextEditor {
   onPaste(e) {
     e.preventDefault();
     const dt = e.clipboardData;
+    const files = Array.from(dt.files || []).concat(
+      dt.files && dt.files.length
+        ? []
+        : Array.from(dt.items || []).filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean),
+    );
+    if (files.length && this.opts.pasteFiles) {
+      this.opts.pasteFiles(files);
+      return;
+    }
     const rich = dt.getData(CLIP_TYPE);
     if (rich) {
       try {
