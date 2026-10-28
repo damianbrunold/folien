@@ -188,17 +188,26 @@
 
     ;; --- registry -----------------------------------------------------
 
-    (define (make-design id name colors fonts layouts)
+    ;; Text settings: the bullet character of lists, line height (times
+    ;; the font size) and the space after a paragraph (times the font
+    ;; size). The canton allows only dash lists ("Nur Strichlisten").
+    (define (text-settings bullet)
+      `(("bullet" . ,bullet) ("lineHeight" . 1.2) ("paraSpacing" . 0.35)))
+
+    (define (make-design id name colors fonts text layouts)
       `(("id" . ,id)
         ("name" . ,name)
         ("size" . #(1920 1080))
         ("colors" . ,colors)
         ("fonts" . ,fonts)
+        ("text" . ,text)
         ("layouts" . ,layouts)))
 
     (define designs
-      (list (make-design "folien" "Folien" folien-colors folien-fonts folien-layouts)
-            (make-design "zh" "Kanton Zürich" zh-colors zh-fonts zh-layouts)))
+      (list (make-design "folien" "Folien" folien-colors folien-fonts
+                         (text-settings "•") folien-layouts)
+            (make-design "zh" "Kanton Zürich" zh-colors zh-fonts
+                         (text-settings "–") zh-layouts)))
 
     (define (design-ref design key)
       (cdr (assoc key design)))

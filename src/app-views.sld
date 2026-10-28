@@ -175,9 +175,8 @@
              ,(deck-table decks status)))))
 
     ;; --- one deck -----------------------------------------------------
-    ;; Until the editor exists (phase 3), the deck page shows the deck's
-    ;; facts and the rename form; the slides are drawn by static/js once
-    ;; the renderer is in (phase 2).
+    ;; The deck's facts, actions and rename form; below them the viewer
+    ;; (static/js/viewer.js), which loads the deck from the JSON API.
 
     (define (deck-page who deck slide-count msg)
       (let* ((id (col deck "id"))
@@ -185,24 +184,31 @@
              (active? (string=? status "active")))
         (page (col deck "title") who
           `(section
-             (h2 ,(col deck "title"))
+             (div (@ (class "deck-head"))
+               (div
+                 (h2 ,(col deck "title"))
+                 (p (@ (class "muted"))
+                    ,(design-name (col deck "design")) " · "
+                    ,(number->string slide-count) ,(if (= slide-count 1) " Folie" " Folien")
+                    " · Revision " ,(id->string (col deck "revision"))
+                    ,(cond ((string=? status "archived") " · archiviert (schreibgeschützt)")
+                           ((string=? status "trashed") " · im Papierkorb")
+                           (else ""))))
+               (div (@ (class "actions")) ,@(deck-actions status id)))
              ,(notice msg)
-             (p (@ (class "muted"))
-                ,(design-name (col deck "design")) " · "
-                ,(number->string slide-count) ,(if (= slide-count 1) " Folie" " Folien")
-                " · Revision " ,(id->string (col deck "revision"))
-                ,(cond ((string=? status "archived") " · archiviert")
-                       ((string=? status "trashed") " · im Papierkorb")
-                       (else "")))
+             (div (@ (id "viewer") (class "viewer")
+                     (data-deck-url ,(url (string-append "/api/decks/" id)))
+                     (data-designs-url ,(url "/api/designs")))
+               (noscript "Zum Anzeigen der Folien wird JavaScript benötigt."))
              ,(if active?
                   `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/rename")))
-                            (class "row-form"))
+                            (class "row-form spaced"))
                      (input (@ (name "title") (value ,(col deck "title")) (aria-label "Titel")
                                (maxlength "200") (required #t)))
                      (button (@ (type "submit")) "Umbenennen"))
-                  "")
-             (div (@ (class "actions spaced"))
-               ,@(deck-actions status id))))))
+                  ""))
+          `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
+          `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
 
     ;; --- profile ------------------------------------------------------
 

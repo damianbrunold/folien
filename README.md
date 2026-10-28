@@ -17,7 +17,7 @@ Implemented step by step, phase by phase:
 - [x] Phase 1 — deck management: create, rename, duplicate, archive,
       trash, delete; document model with validation; JSON API with
       revision-checked saves
-- [ ] Phase 2 — renderer and viewer
+- [x] Phase 2 — renderer (`static/js/render.js`) and read-only viewer
 - [ ] Phase 3 — editor
 - [ ] Phase 4 — assets (images, videos, paste)
 - [ ] Phase 5 — presenting (transitions, builds, presenter console)
@@ -34,6 +34,7 @@ bin/dev-server.scm    auto-reloading dev supervisor
 bin/seed-admin.scm    create the first admin (prompts for a password)
 bin/init-config.scm   write a new config file (used by deploy/install.sh)
 bin/gen-secret.scm    print a new session secret (for key rotation)
+bin/seed-demo.scm     create two demo decks (one per design) for a user
 src/app-config.sld    config reading and first-run creation
 src/app-site.sld      URL prefix: url, asset, cookie-path
 src/app-db.sld        pool, query helpers, transactions, migrations
@@ -45,7 +46,8 @@ src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
 migrations/           NNNN_*.sql, applied in order at startup
-static/               CSS, scripts, fonts (Inter, SIL OFL), favicon
+static/               CSS, fonts (Inter, SIL OFL), favicon; js/render.js draws
+                      slides (shared by viewer, editor, player), js/viewer.js
 tests/                test_pure_*.scm (no database), test_live_web.scm
 deploy/               systemd units, health probe, nginx example, install script
 ```

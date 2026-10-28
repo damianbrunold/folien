@@ -240,3 +240,15 @@ a.button:hover, button.small:hover { border-color: var(--accent); color: var(--a
 button.small.danger { color: var(--danger); border-color: var(--danger); }
 button.small.danger:hover { color: var(--on-accent); background: var(--danger); }
 .row-form select { width: auto; margin-top: 0; }
+
+/* Deck page: title and facts left, actions right. */
+.deck-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.deck-head h2 { margin: 0 0 0.25rem; }
+.deck-head p { margin: 0; }
+.row-form.spaced { margin-top: 1.5rem; max-width: 40rem; }

@@ -171,7 +171,10 @@ Description: Builds the app's request handler. settings is an alist:
               (set-deck-status! db (col user "id") (params-ref params "id") status)
               (redirect target))))
 
-        (route! "GET" "/static/*" (make-static-handler (setting settings 'static-dir)))
+        ;; no-cache: the ES modules import each other without a ?v= cache
+        ;; buster, so the browser must revalidate them (cheap, by ETag).
+        (route! "GET" "/static/*" (make-static-handler (setting settings 'static-dir)
+                                                       '((cache-control . "no-cache"))))
 
         ;; --- deck lists ---
 
