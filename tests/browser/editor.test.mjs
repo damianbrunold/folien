@@ -252,6 +252,40 @@ test("a new text box", async () => {
 });
 
 
+test("a table: type into cells, Tab, add a row", async () => {
+  await browser.eval("document.querySelector('.ed-thumb').click()");
+  await browser.eval(`document.querySelector('button[aria-label="Tabelle einfügen"]').click()`);
+  await browser.waitFor("!!document.querySelector('.ed-frame .el-table')");
+  const id = await browser.eval("document.querySelector('.ed-frame .el-table').dataset.id");
+  const c = await centerOf(id);
+  // Double click at the top left: the header cell [0, 0].
+  await browser.click(c.x - c.w / 2 + 20, c.y - c.h / 2 + 20, 2);
+  await browser.waitFor("!!document.querySelector('.cell.is-editing .text-inner.editing')");
+  await browser.keys("Name");
+  await browser.keys(Keys.tab);
+  await browser.waitFor("document.querySelector('.cell.is-editing').dataset.c === '1'");
+  await browser.keys("Wert");
+  // Tab in the last cell adds a row.
+  for (let i = 0; i < 11; i++) await browser.keys(Keys.tab);
+  await browser.waitFor("document.querySelector('.cell.is-editing').dataset.r === '4'");
+  await browser.keys("neu");
+  await browser.keys(Keys.escape);
+  const doc = await saved();
+  const els = doc.slides[0].elements;
+  const t = els[els.length - 1].table;
+  assert.equal(t.rows.length, 5);
+  assert.equal(t.rows[0][0].paragraphs[0].runs[0].text, "Name");
+  assert.equal(t.rows[0][1].paragraphs[0].runs[0].text, "Wert");
+  assert.equal(t.rows[4][0].paragraphs[0].runs[0].text, "neu");
+  assert.equal(await browser.eval("document.querySelectorAll('.ed-frame .el-table .cell').length"), 15);
+  // Remove a column from the panel.
+  await browser.eval(`document.querySelector('button[title="Spalte löschen"]').click()`);
+  const doc2 = await saved();
+  const t2 = doc2.slides[0].elements[doc2.slides[0].elements.length - 1].table;
+  assert.ok(t2.rows.every((r) => r.length === 2));
+  await shot("11-table");
+});
+
 test("a conflicting save shows the banner", async () => {
   await browser.eval("window.__putStatus = 409");
   await browser.eval("document.querySelector('.ed-title').focus()");

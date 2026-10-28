@@ -103,6 +103,24 @@
                           "folien")
             "bad id"))))
 
+(test-group "tables"
+  (define (cell t) `(("paragraphs" . #((("runs" . #((("text" . ,t)))))))))
+  (define (doc-with-table table)
+    (with-element (new-doc "folien" "x")
+      `(("id" . "tb") ("type" . "table") ("x" . 0) ("y" . 0) ("w" . 600) ("h" . 200)
+        ("table" . ,table))))
+  (test-equal #f (validate-doc (doc-with-table `(("header" . #t) ("rows" . #(#(,(cell "a") ,(cell "b"))
+                                                                            #(,(cell "1") ,(cell "2"))))))
+                               "folien"))
+  (test-assert (has? (validate-doc (doc-with-table `(("rows" . #(#(,(cell "a") ,(cell "b")) #(,(cell "1"))))))
+                                   "folien")
+                     "same number"))
+  (test-assert (has? (validate-doc (doc-with-table '(("rows" . #()))) "folien") "1 to 50"))
+  (test-assert (has? (validate-doc (doc-with-table `(("rows" . #(#((("paragraphs" . 1))))))) "folien")
+                     "paragraphs"))
+  (test-assert (has? (validate-doc (doc-with-table `(("rows" . #(#(,(cell "a")))) ("header" . "ja"))) "folien")
+                     "header")))
+
 (test-group "links in text"
   (define (doc-with-link link)
     (with-element (new-doc "folien" "x")

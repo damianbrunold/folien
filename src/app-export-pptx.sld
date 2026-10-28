@@ -3,7 +3,7 @@
 ;;
 ;; Every element becomes a positioned PowerPoint object as the renderer
 ;; draws it: text boxes with the deck's text (fonts, sizes, colours,
-;; bullets and numbering, links), shapes, lines, pictures (fit and crop),
+;; bullets and numbering, links), tables, shapes, lines, pictures (fit and crop),
 ;; MP4 videos (other videos as their poster frame); layouts' decorations
 ;; become shapes of each slide. Slide transitions and builds become
 ;; PowerPoint transitions and animations, notes the slide notes. Hidden
@@ -223,6 +223,9 @@
       (cond ((member s '("rounded" "ellipse" "triangle" "arrow" "chevron")) (string->symbol s))
             (else 'rect)))
 
+    (define table-pad-x 16)              ; as render.js
+    (define table-pad-y 10)
+
     (define (add-element! slide design data-dir layout el)
       (let* ((r (resolve layout el))
              (x (list-ref r 0)) (y (list-ref r 1)) (w (list-ref r 2)) (h (list-ref r 3))
@@ -241,6 +244,31 @@
                                  ,@(if opacity `((fill-alpha . ,opacity)) '())
                                  (text . ,(paragraphs design (or (jr el "text") '(("paragraphs" . #()))) style))
                                  (anchor . ,(string->symbol (or (jr style "valign") "top")))))))
+          ((equal? type "table")
+           (let* ((table (jr el "table"))
+                  (header? (eq? (jr table "header") #t))
+                  (header-style (merge-style style '(("font" . "heading") ("color" . "on-accent"))))
+                  (rows (vector->list (jr table "rows" #()))))
+             ;; as render.js: header on the accent colour, banded rows,
+             ;; text centred vertically
+             (slide-add-table! slide (emu x) (emu y) (emu w) (emu h)
+                               (let loop ((rows rows) (i 0) (acc '()))
+                                 (if (null? rows)
+                                     (reverse acc)
+                                     (let ((fill (hex design (cond ((and header? (= i 0)) "accent")
+                                                                   ((odd? (- i (if header? 1 0))) "light")
+                                                                   (else "background"))))
+                                           (st (if (and header? (= i 0)) header-style style)))
+                                       (loop (cdr rows) (+ i 1)
+                                             (cons (map (lambda (cell)
+                                                          `((text . ,(paragraphs design cell st))
+                                                            (fill . ,fill)
+                                                            (anchor . middle)))
+                                                        (vector->list (car rows)))
+                                                   acc)))))
+                               `(,@(if build `((build . ,build)) '())
+                                 (header . ,header?)
+                                 (margins . ,(map emu (list table-pad-x table-pad-y table-pad-x table-pad-y)))))))
           ((equal? type "shape")
            (let ((stroke (hex design (or (jr style "stroke") "none")))
                  (sw (or (jr style "strokeWidth") 0)))

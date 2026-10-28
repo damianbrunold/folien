@@ -19,7 +19,7 @@ Implemented step by step, phase by phase:
       revision-checked saves
 - [x] Phase 2 — renderer (`static/js/render.js`) and read-only viewer
 - [x] Phase 3 — editor: slides, layouts, text (own rich-text editor), shapes,
-      lines, properties, undo/redo, autosave with conflict detection, notes
+      lines, tables, properties, undo/redo, autosave with conflict detection, notes
 - [x] Phase 4 — images and videos: upload, drag and drop, paste, image
       placeholders, poster frames, media library, byte-range streaming
 - [x] Phase 5 — presenting: transitions, builds, black/white screen,
@@ -30,7 +30,9 @@ Implemented step by step, phase by phase:
       import as a new deck; ZIP downloads in the lists and the archive
 - [x] Phase 8 — PowerPoint export (.pptx): text, shapes, pictures, videos,
       transitions, builds as animations, notes; also in the bundle
-- [ ] Phase 9 — sharing, snapshots, packaging
+- [ ] Phase 9 — sharing (view/edit), versions, templates, tags and search,
+      tables, clean-up and backup timers, Debian package; accessibility
+      pass still open
 
 ## Layout
 
@@ -95,7 +97,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.5.0 or later.
+Needs dabscm 2.6.0 or later.
 
 ## PDF export
 
@@ -115,7 +117,7 @@ deck to look at.
 `GET /decks/<id>/export.pptx` (on the deck page; also `exports/folien.pptx`
 in a bundle) writes every element as a positioned PowerPoint object with
 `(scm ooxml presentation)`: text boxes with the deck's formatting (bullets,
-numbering, links), shapes, lines, pictures (fitted or cropped as on the
+numbering, links), tables, shapes, lines, pictures (fitted or cropped as on the
 slide), MP4 videos with their poster (other videos as the poster), the
 layouts' decorations, slide backgrounds, transitions, builds as
 animations (zoom becomes fade) and notes. Hidden slides are left out. The

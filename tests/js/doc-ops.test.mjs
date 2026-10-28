@@ -70,3 +70,34 @@ test("geometry", () => {
   ops.moveItem(a, 0, 2);
   assert.deepEqual(a, [2, 3, 1]);
 });
+
+test("table rows and columns", () => {
+  const t = ops.newTable(2, 3);
+  assert.equal(t.header, true);
+  assert.equal(t.rows.length, 2);
+  assert.equal(t.rows[1].length, 3);
+  assert.ok(ops.insertRow(t, 1));
+  assert.equal(t.rows.length, 3);
+  assert.ok(ops.insertColumn(t, 0));
+  assert.ok(t.rows.every((r) => r.length === 4));
+  assert.ok(ops.deleteColumn(t, 3));
+  assert.ok(ops.deleteRow(t, 0));
+  assert.deepEqual([t.rows.length, t.rows[0].length], [2, 3]);
+  // The last row and column stay.
+  const one = ops.newTable(1, 1);
+  assert.equal(ops.deleteRow(one, 0), false);
+  assert.equal(ops.deleteColumn(one, 0), false);
+  // Cells are separate objects.
+  t.rows[0][0].paragraphs[0].runs[0].text = "x";
+  assert.equal(t.rows[0][1].paragraphs[0].runs[0].text, "");
+});
+
+test("table limits and cell order", () => {
+  const t = ops.newTable(ops.MAX_TABLE_ROWS, 1);
+  assert.equal(ops.insertRow(t, 0), false);
+  const u = ops.newTable(2, 2);
+  assert.deepEqual(ops.nextCell(u, [0, 1], 1), [1, 0]);
+  assert.deepEqual(ops.nextCell(u, [1, 0], -1), [0, 1]);
+  assert.equal(ops.nextCell(u, [1, 1], 1), null);
+  assert.equal(ops.nextCell(u, [0, 0], -1), null);
+});

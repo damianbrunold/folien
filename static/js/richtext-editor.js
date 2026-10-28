@@ -12,6 +12,7 @@
 //     change(text),             // changed
 //     selectionChange(),        // caret or selection moved
 //     keydown(e),               // keys the editor does not handle
+//     tab(e),                   // Tab: true if handled (else: list level)
 //     pasteFiles(files),        // files were pasted (images, videos)
 //   });
 //   ed.focus(); ed.toggleMark("b"); ed.destroy();
@@ -289,6 +290,7 @@ export class RichTextEditor {
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === "Tab") {
       e.preventDefault();
+      if (this.opts.tab && this.opts.tab(e)) return;
       this.shiftLevel(e.shiftKey ? -1 : 1);
       return;
     }

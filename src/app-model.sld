@@ -11,7 +11,8 @@
 ;;   element: {"id", "type": text|image|video|shape|line|table,
 ;;             "placeholder"?: role,          ; inherits from the layout
 ;;             "x", "y", "w", "h"?, "rot"?,   ; required unless placeholder
-;;             "style"?, "build"?, "text"?, "asset"?, "alt"?, ...}
+;;             "style"?, "build"?, "text"?, "asset"?, "alt"?,
+;;             "table"?: {"rows": [[rich text, ...], ...], "header"?}, ...}
 ;;
 ;;   rich text: {"paragraphs": [{"align"?, "list"?, "level"?,
 ;;                               "runs": [{"text", "b"?, "i"?, "u"?,
@@ -244,6 +245,27 @@ Description: The document of a new deck: one title slide with title as
 
     (define element-types '("text" "image" "video" "shape" "line" "table"))
 
+    (define max-table-rows 50)
+    (define max-table-cols 20)
+
+    ;; A table: rows of cells (rich text), all rows equally long.
+    (define (check-table table path)
+      (if (not (object? table))
+          (problem path "not an object")
+          (let ((rows (jref table "rows")))
+            (check-all
+             (opt table "header" path boolean? "not a boolean")
+             (if (not (and (vector? rows) (<= 1 (vector-length rows) max-table-rows)))
+                 (problem (string-append path ".rows") "must be an array of 1 to 50 rows")
+                 (let ((n (let ((r0 (vector-ref rows 0))) (and (vector? r0) (vector-length r0)))))
+                   (if (not (and n (<= 1 n max-table-cols)))
+                       (problem (string-append path ".rows[0]") "must be an array of 1 to 20 cells")
+                       (each-in rows (string-append path ".rows")
+                                (lambda (row rp i)
+                                  (if (not (and (vector? row) (= (vector-length row) n)))
+                                      (problem rp "rows must have the same number of cells")
+                                      (each-in row rp (lambda (cell cp j) (check-rich-text cell cp)))))))))))))
+
     (define (check-element el path ids)
       (if (not (object? el))
           (problem path "not an object")
@@ -279,7 +301,9 @@ Description: The document of a new deck: one title slide with title as
              (let ((b (assoc "build" el)))
                (and b (check-build (cdr b) (string-append path ".build"))))
              (let ((t (assoc "text" el)))
-               (and t (check-rich-text (cdr t) (string-append path ".text"))))))))
+               (and t (check-rich-text (cdr t) (string-append path ".text"))))
+             (let ((t (assoc "table" el)))
+               (and t (check-table (cdr t) (string-append path ".table"))))))))
 
     (define (check-transition tr path)
       (if (not (object? tr))

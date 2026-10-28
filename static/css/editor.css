@@ -178,6 +178,8 @@ body.editor-body { overflow: hidden; }
 }
 .ed-frame .slide { user-select: none; -webkit-user-select: none; }
 .ed-frame .el-text.is-editing { cursor: text; }
+.ed-frame .el-table.is-editing .cell { cursor: text; }
+.ed-frame .el-table .cell.is-editing { outline: 3px solid #2563eb; outline-offset: -3px; }
 .ed-frame .text-inner.editing {
   outline: none;
   user-select: text;

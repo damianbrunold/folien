@@ -18,6 +18,7 @@ import {
   renderSlide,
   fitInto,
   cssColor,
+  cellStyle,
 } from "./render.js";
 import * as rt from "./richtext-model.js";
 import { RichTextEditor } from "./richtext-editor.js";
@@ -35,7 +36,7 @@ let designs; // Map id -> design
 let design; // the deck's design
 let cur = 0; // current slide index
 let sel = []; // selected element ids (current slide)
-let editing = null; // {id, ed, box} while a text box is edited
+let editing = null; // {id, ed, box, cell?} while a text box or table cell is edited
 let notesEditor = null;
 let scale = 1;
 const undoStack = [];
@@ -498,6 +499,7 @@ function buildToolbar() {
       tb("🖼", "Bild oder Video einfügen", () => pickFiles(true, (files) => insertMedia(files))),
       ui.shapeSelect,
       tb("╱", "Linie einfügen", insertLine),
+      tb("▦", "Tabelle einfügen", insertTable),
     ),
     group(ui.bold, ui.italic, ui.underline, ui.size, ui.colorSlot),
     group(...ui.alignBtns),
@@ -520,7 +522,7 @@ function fmt() {
   if (notesEditor && notesActive) {
     return editorTarget(notesEditor, true);
   }
-  return elementsTarget(selectedEls().filter((e) => e.type === "text"));
+  return elementsTarget(selectedEls().filter((e) => e.type === "text" || e.type === "table"));
 }
 
 function editorTarget(ed, notes) {
@@ -544,8 +546,16 @@ function editorTarget(ed, notes) {
 }
 
 // Formatting applied to the whole text of text elements.
+// The rich texts of an element: a text box's text, a table's cells.
+function textsOf(e) {
+  if (e.type === "table") {
+    return e.table.rows.flatMap((row) => row.map((c, j) => (row[j] = rt.ensureText(c))));
+  }
+  return [(e.text = rt.ensureText(e.text))];
+}
+
 function elementsTarget(els) {
-  const texts = () => els.map((e) => (e.text = rt.ensureText(e.text)));
+  const texts = () => els.flatMap(textsOf);
   const all = (f) => texts().every((t) => f(t, ...rt.wholeRange(t)));
   return {
     enabled: els.length > 0,
@@ -566,7 +576,7 @@ function elementsTarget(els) {
       change(() =>
         els.forEach((e) => {
           e.style = Object.assign({}, e.style, { size: n });
-          rt.setMark(rt.ensureText(e.text), ...rt.wholeRange(e.text), "size", undefined);
+          for (const t of textsOf(e)) rt.setMark(t, ...rt.wholeRange(t), "size", undefined);
         }),
       ),
     setColor: (c) =>
@@ -575,7 +585,7 @@ function elementsTarget(els) {
           e.style = Object.assign({}, e.style);
           if (c === undefined) delete e.style.color;
           else e.style.color = c;
-          rt.setMark(rt.ensureText(e.text), ...rt.wholeRange(e.text), "color", undefined);
+          for (const t of textsOf(e)) rt.setMark(t, ...rt.wholeRange(t), "color", undefined);
         }),
       ),
     setParagraphProps: (p) =>
@@ -736,7 +746,15 @@ function hitTest(pt) {
 function wireStage() {
   ui.stage.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || e.target.closest(".handle")) return;
-    if (editing && editing.box.contains(e.target)) return; // caret moves in the text
+    if (editing && editing.box.contains(e.target)) {
+      // The caret moves in the text, or to another cell of the table.
+      const c = editing.cell && cellAt(e);
+      if (c && (c[0] !== editing.cell[0] || c[1] !== editing.cell[1])) {
+        e.preventDefault();
+        startEditing(editing.id, false, e, c);
+      }
+      return;
+    }
     const pt = toSlide(e);
     const id = hitTest(pt);
     if (editing) stopEditing();
@@ -760,6 +778,7 @@ function wireStage() {
     const id = hitTest(toSlide(e));
     const el = id && findEl(id);
     if (el && el.type === "text" && !(editing && editing.id === id)) startEditing(id, false, e);
+    else if (el && el.type === "table") startEditing(id, false, e, cellAt(e));
     else if (el && (el.type === "image" || el.type === "video")) {
       pickFiles(false, (files) => insertMedia(files, null, el.id));
     }
@@ -953,25 +972,49 @@ function startRotate(e, id) {
 
 // --- text editing ---------------------------------------------------
 
-function startEditing(id, selectAll, clickEvent) {
+// The table cell [row, column] under a pointer event, or null.
+function cellAt(e) {
+  const c = e.target.closest && e.target.closest(".el-table .cell");
+  return c ? [Number(c.dataset.r), Number(c.dataset.c)] : null;
+}
+
+// Edits a text box, or a cell of a table (default: the first).
+function startEditing(id, selectAll, clickEvent, cell) {
   const el = findEl(id);
-  if (!el || el.type !== "text") return;
+  if (!el || (el.type !== "text" && el.type !== "table")) return;
   if (editing) stopEditing();
+  const table = el.type === "table" ? el.table : null;
+  if (table && !(cell && table.rows[cell[0]] && cell[1] < table.rows[0].length)) cell = [0, 0];
   sel = [id];
   renderCanvas();
   const box = ui.frame.querySelector('.el[data-id="' + id + '"]');
   if (!box) return;
-  const inner = box.querySelector(".text-inner");
+  const host = table ? box.querySelector('.cell[data-r="' + cell[0] + '"][data-c="' + cell[1] + '"]') : box;
+  const inner = host.querySelector(".text-inner");
   inner.classList.remove("prompt");
   const ed = new RichTextEditor(inner, {
-    text: el.text,
-    base: resolved(el).style,
+    text: table ? rt.ensureText(table.rows[cell[0]][cell[1]]) : el.text,
+    base: table ? cellStyle(resolved(el).style, cell[0] === 0 && !!table.header) : resolved(el).style,
     design,
     beforeChange: typingStep,
     change: (t) => {
-      el.text = t;
+      if (table) table.rows[cell[0]][cell[1]] = t;
+      else el.text = t;
       afterChange({ light: true });
     },
+    // Tab moves between cells; Tab in the last cell adds a row.
+    tab: table
+      ? (e) => {
+          const dir = e.shiftKey ? -1 : 1;
+          let next = ops.nextCell(table, cell, dir);
+          if (!next && dir === 1) {
+            change(() => ops.insertRow(table, table.rows.length));
+            next = ops.nextCell(table, cell, dir);
+          }
+          if (next) startEditing(id, true, null, next);
+          return true;
+        }
+      : null,
     selectionChange: updateToolbar,
     keydown: (e) => {
       if (e.key === "Escape") {
@@ -987,8 +1030,9 @@ function startEditing(id, selectAll, clickEvent) {
       }
     },
   });
-  editing = { id, ed, box };
+  editing = { id, ed, box, cell };
   box.classList.add("is-editing");
+  host.classList.add("is-editing");
   ed.focus(selectAll);
   if (clickEvent) placeCaret(ed, clickEvent.clientX, clickEvent.clientY);
   renderOverlay();
@@ -1017,7 +1061,7 @@ function stopEditing() {
   lastTyping = 0;
   // A free text box left empty goes away.
   const el = findEl(id);
-  if (el && !el.placeholder && rt.plainText(rt.ensureText(el.text)) === "") {
+  if (el && el.type === "text" && !el.placeholder && rt.plainText(rt.ensureText(el.text)) === "") {
     slide().elements = slide().elements.filter((e) => e !== el);
     sel = [];
     markDirty();
@@ -1255,6 +1299,19 @@ function insertShape(kind) {
     w: 400,
     h: 300,
     style: { fill: "accent" },
+  });
+}
+
+function insertTable() {
+  addElement({
+    id: ops.newId(),
+    type: "table",
+    x: 360,
+    y: 340,
+    w: 1200,
+    h: 400,
+    style: { font: "body", size: 32, color: "text", align: "left" },
+    table: ops.newTable(4, 3),
   });
 }
 
@@ -1645,7 +1702,7 @@ document.addEventListener("keydown", (e) => {
       break;
     case "Enter":
     case "F2":
-      if (sel.length === 1 && findEl(sel[0]).type === "text") startEditing(sel[0], true);
+      if (sel.length === 1 && ["text", "table"].includes(findEl(sel[0]).type)) startEditing(sel[0], true);
       else return;
       break;
     default:
@@ -1842,6 +1899,7 @@ function elementSection(el) {
         colorField(r.style.fill || "none", (c) => setStyle("fill", c === "none" ? undefined : c), { none: true })),
     );
   }
+  if (el.type === "table") children.push(...tableFields(el, r, setStyle));
   if (el.type === "shape") {
     children.push(
       selectField(
@@ -1954,6 +2012,58 @@ function elementSection(el) {
       setStyle("opacity", n >= 100 ? undefined : Math.max(0, Math.min(100, n)) / 100), { min: 0, max: 100 }),
   );
   return section(TYPE_NAMES[el.type] || el.type, ...children);
+}
+
+// Table properties: text style, header row, rows and columns. Rows and
+// columns are added and removed next to the cell being edited (else at
+// the end).
+function tableFields(el, r, setStyle) {
+  const t = el.table;
+  const at = editing && editing.id === el.id ? editing.cell : null;
+  const row = at ? at[0] : t.rows.length - 1;
+  const col = at ? at[1] : t.rows[0].length - 1;
+  const act = (label, title, f) =>
+    h("button", {
+      type: "button",
+      class: "small",
+      text: label,
+      title,
+      on: {
+        click: () => {
+          if (editing) stopEditing();
+          change(() => f(t));
+        },
+      },
+    });
+  return [
+    numberField("Grösse", r.style.size, (n) => setStyle("size", Math.max(1, Math.min(1000, n))), {
+      min: 1,
+      max: 1000,
+    }),
+    h("label", { class: "field" }, h("span", { text: "Textfarbe" }),
+      colorField(r.style.color, (c) => setStyle("color", c || "text"))),
+    h(
+      "label",
+      { class: "check" },
+      h("input", {
+        type: "checkbox",
+        checked: !!t.header,
+        on: { change: (e) => change(() => (e.target.checked ? (t.header = true) : delete t.header)) },
+      }),
+      " Kopfzeile",
+    ),
+    h("p", { class: "muted small", text: t.rows.length + " Zeilen × " + t.rows[0].length + " Spalten" }),
+    h(
+      "div",
+      { class: "align-grid" },
+      act("↑+", "Zeile darüber einfügen", (t) => ops.insertRow(t, row)),
+      act("↓+", "Zeile darunter einfügen", (t) => ops.insertRow(t, row + 1)),
+      act("−", "Zeile löschen", (t) => ops.deleteRow(t, row)),
+      act("←+", "Spalte links einfügen", (t) => ops.insertColumn(t, col)),
+      act("→+", "Spalte rechts einfügen", (t) => ops.insertColumn(t, col + 1)),
+      act("|−", "Spalte löschen", (t) => ops.deleteColumn(t, col)),
+    ),
+  ];
 }
 
 // --- start ----------------------------------------------------------

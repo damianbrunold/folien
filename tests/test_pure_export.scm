@@ -74,7 +74,16 @@
           ("style" . (("stroke" . "#ff0000") ("strokeWidth" . 8))))))))
 
 (define slide2 `(("id" . "s2") ("layout" . "section") ("hidden" . #t) ("elements" . #())))
-(define slide3 `(("id" . "s3") ("layout" . "blank") ("background" . "accent") ("elements" . #())))
+(define (cell str . run-props) (text (para `((("text" . ,str) ,@run-props)))))
+(define table-el
+  `(("id" . "tb") ("type" . "table") ("x" . 160) ("y" . 160) ("w" . 1600) ("h" . 500)
+    ("style" . (("font" . "body") ("size" . 36) ("color" . "text") ("align" . "left")))
+    ("table" . (("header" . #t)
+                ("rows" . ,(vector (vector (cell "Kanton") (cell "Fläche"))
+                                   (vector (cell "Zürich" '("link" . "https://www.zh.ch/")) (cell "1729 km²"))
+                                   (vector (cell "Eine lange Zelle, die über mehrere Zeilen umbrechen muss, weil sie so viel Text hat wie sonst keine")
+                                           (cell "rechts" '("b" . #t)))))))))
+(define slide3 `(("id" . "s3") ("layout" . "blank") ("background" . "accent") ("elements" . #(,table-el))))
 
 (define doc `(("format" . 1) ("slides" . ,(vector slide1 slide2 slide3))))
 
@@ -156,6 +165,8 @@
           (test-assert "builds" (has? s1 "<p:timing>"))
           (test-assert "notes" (has? (part "ppt/notesSlides/notesSlide1.xml") "Eine Notiz"))
           (test-assert "the slide background" (has? (part "ppt/slides/slide2.xml") "<p:bg>"))
+          (test-assert "the table" (has? (part "ppt/slides/slide2.xml") "<a:tbl>"))
+          (test-assert "its cells" (has? (part "ppt/slides/slide2.xml") "1729 km²"))
           ;; RGB PNG (also the poster, stored once), RGBA PNG, SVG as PNG,
           ;; and the GIF (PowerPoint takes GIFs)
           (test-equal 4 (count-of (apply string-append names) "ppt/media/")))))

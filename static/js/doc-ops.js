@@ -153,3 +153,52 @@ export function snapOffset(ours, targets, tolerance) {
   }
   return best;
 }
+
+// --- tables ---------------------------------------------------------
+// A table is {rows: [[rich text, ...], ...], header?}: every row has the
+// same number of cells (src/app-model.sld checks it, at most 50 x 20).
+
+export const MAX_TABLE_ROWS = 50;
+export const MAX_TABLE_COLS = 20;
+
+export function newTable(rows, cols) {
+  return {
+    header: true,
+    rows: Array.from({ length: rows }, () => Array.from({ length: cols }, emptyText)),
+  };
+}
+
+// Inserts an empty row before index at (= rows.length appends). False if
+// the table is full.
+export function insertRow(table, at) {
+  if (table.rows.length >= MAX_TABLE_ROWS) return false;
+  const cols = table.rows[0].length;
+  table.rows.splice(at, 0, Array.from({ length: cols }, emptyText));
+  return true;
+}
+
+export function deleteRow(table, at) {
+  if (table.rows.length <= 1) return false;
+  table.rows.splice(at, 1);
+  return true;
+}
+
+export function insertColumn(table, at) {
+  if (table.rows[0].length >= MAX_TABLE_COLS) return false;
+  for (const row of table.rows) row.splice(at, 0, emptyText());
+  return true;
+}
+
+export function deleteColumn(table, at) {
+  if (table.rows[0].length <= 1) return false;
+  for (const row of table.rows) row.splice(at, 1);
+  return true;
+}
+
+// The next (dir 1) or previous (dir -1) cell in reading order, or null.
+export function nextCell(table, [r, c], dir) {
+  const cols = table.rows[0].length;
+  const i = r * cols + c + dir;
+  if (i < 0 || i >= table.rows.length * cols) return null;
+  return [Math.floor(i / cols), i % cols];
+}

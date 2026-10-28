@@ -420,19 +420,70 @@
                        (let* ((valign (or (jr style "valign") "top"))
                               (offset (cond ((equal? valign "middle") (/ (- h total) 2))
                                             ((equal? valign "bottom") (- h total))
-                                            (else 0)))
-                              (link-box (and (= rot 0)
-                                             (lambda (x0 y0 x1 y1)
-                                               ;; local -> slide -> page
-                                               (let ((a (to-page (+ x x0) (- (+ y h) y0)))
-                                                     (b (to-page (+ x x1) (- (+ y h) y1))))
-                                                 (list (car a) (cadr a) (car b) (cadr b)))))))
-                         (draw-text-lines ctx page placed (- h offset) link-box)))))))
+                                            (else 0))))
+                         (draw-text-lines ctx page placed (- h offset)
+                                          (link-box-of to-page x y h rot))))))))
+              ((equal? type "table")
+               (draw-table ctx page (jr el "table") w h style (link-box-of to-page x y h rot)))
               ((equal? type "shape")
                (draw-shape ctx page (string->symbol (or (jr el "shape") "rect")) w h style))
               ((equal? type "line") (draw-line ctx page el w h style))
               ((or (equal? type "image") (equal? type "video")) (draw-image ctx page el w h))
               (else #f))))))
+
+    ;; Link rectangles of an element at (x y) of height h: local (y up)
+    ;; -> slide -> page; #f if it is rotated (no link annotations).
+    (define (link-box-of to-page x y h rot)
+      (and (= rot 0)
+           (lambda (x0 y0 x1 y1)
+             (let ((a (to-page (+ x x0) (- (+ y h) y0)))
+                   (b (to-page (+ x x1) (- (+ y h) y1))))
+               (list (car a) (cadr a) (car b) (cadr b))))))
+
+    ;; --- tables ---------------------------------------------------------
+    ;; As render.js draws them: equal columns, each row at least h / rows
+    ;; high and as high as its text needs, the header row in the heading
+    ;; font on the accent colour, body rows banded, text centred
+    ;; vertically.
+
+    (define table-pad-x 16)
+    (define table-pad-y 10)
+
+    (define (table-row-fill table i)
+      (let ((header? (eq? (jr table "header") #t)))
+        (cond ((and (= i 0) header?) "accent")
+              ((odd? (- i (if header? 1 0))) "light")
+              (else "background"))))
+
+    (define (draw-table ctx page table w h style link-box)
+      (let* ((rows (vector->list (jr table "rows" #())))
+             (n (length rows))
+             (cols (if (pair? rows) (vector-length (car rows)) 1))
+             (col-w (/ w cols))
+             (min-h (/ h (max n 1)))
+             (header? (eq? (jr table "header") #t))
+             (header-style (merge-style style '(("font" . "heading") ("color" . "on-accent")))))
+        (let loop ((rows rows) (i 0) (top 0))
+          (when (pair? rows)
+            (let* ((cells (map (lambda (cell)
+                                 (call-with-values
+                                   (lambda ()
+                                     (layout-rich-text ctx cell (if (and header? (= i 0)) header-style style)
+                                                       (max 1 (- col-w (* 2 table-pad-x)))))
+                                   cons))
+                               (vector->list (car rows))))
+                   (row-h (apply max min-h (map (lambda (c) (+ (cdr c) (* 2 table-pad-y))) cells))))
+              (set-fill! page (rgb ctx (table-row-fill table i)))
+              (pdf-rect page 0 (- h top row-h) w row-h)
+              (pdf-fill page)
+              (let each ((cs cells) (j 0))
+                (when (pair? cs)
+                  (draw-text-lines ctx page (car (car cs))
+                                   (- h top (/ (- row-h (cdr (car cs))) 2))
+                                   link-box
+                                   (+ (* j col-w) table-pad-x))
+                  (each (cdr cs) (+ j 1))))
+              (loop (cdr rows) (+ i 1) (+ top row-h)))))))
 
     ;; The distinct build orders of a slide, ascending.
     (define (build-orders slide)

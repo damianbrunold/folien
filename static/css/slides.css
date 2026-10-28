@@ -57,6 +57,15 @@
 .slide .para .marker { display: inline-block; }
 .slide .para a { color: inherit; text-decoration: underline; }
 
+.slide .el-table { display: grid; align-content: start; }
+.slide .el-table .cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 .slide .el-shape svg, .slide .el-line svg { display: block; }
 
 .slide .el-media img, .slide .el-media video {

@@ -181,6 +181,53 @@ function renderText(r, design, ctx) {
   return box;
 }
 
+// Tables: equal columns; each row is at least h / rows high and grows
+// with its text (the PDF and PPTX exports size rows the same way). The
+// header row is set in the heading font on the accent colour, body rows
+// are banded; text is centred vertically in its cell. Cells carry
+// data-r/data-c for the editor.
+export const TABLE_PAD_X = 16;
+export const TABLE_PAD_Y = 10;
+
+// The text style of a cell: the element's, header cells in the heading
+// font on the accent colour.
+export function cellStyle(style, header) {
+  return header ? Object.assign({}, style, { font: "heading", color: "on-accent" }) : style;
+}
+
+// The fill token of row i: the header on the accent colour, body rows
+// banded.
+export function tableRowFill(table, i) {
+  if (i === 0 && table.header) return "accent";
+  return (i - (table.header ? 1 : 0)) % 2 === 1 ? "light" : "background";
+}
+
+function renderTable(r, design, ctx) {
+  const box = div("el el-table");
+  place(box, r);
+  const table = r.el.table || { rows: [] };
+  const rows = table.rows;
+  const cols = rows.length ? rows[0].length : 1;
+  box.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+  box.style.gridAutoRows = "minmax(" + r.h / Math.max(rows.length, 1) + "px, auto)";
+  rows.forEach((row, i) => {
+    const header = i === 0 && !!table.header;
+    const fill = tableRowFill(table, i);
+    row.forEach((cell, j) => {
+      const c = div("cell");
+      c.dataset.r = i;
+      c.dataset.c = j;
+      c.style.padding = TABLE_PAD_Y + "px " + TABLE_PAD_X + "px";
+      c.style.backgroundColor = cssColor(design, fill);
+      const inner = div("text-inner");
+      renderRichText(inner, cell, cellStyle(r.style, header), design, ctx);
+      c.appendChild(inner);
+      box.appendChild(c);
+    });
+  });
+  return box;
+}
+
 function renderShape(r, design) {
   const s = r.style;
   const kind = r.el.shape || "rect";
@@ -305,8 +352,10 @@ function renderElement(r, design, ctx) {
     case "image":
     case "video":
       return renderMedia(r, design, ctx);
+    case "table":
+      return renderTable(r, design, ctx);
     default:
-      return null; // tables: later
+      return null;
   }
 }
 
