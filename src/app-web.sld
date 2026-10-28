@@ -40,6 +40,7 @@
           (app assets)
           (app remote)
           (app export-pdf)
+          (app export-pptx)
           (app bundle)
           (app views))
   (export make-app admin-role)
@@ -202,7 +203,7 @@
                    (bytevector-copy
                     (sha256-hash (string-append (col deck "id") "|" (id->string (col deck "revision"))
                                                 "|" (col deck "title") "|" (col deck "design")
-                                                "|" (number->string bundle-version)))
+                                                "|" (number->string bundle-version) "|pptx"))
                     0 12)))
              (path (string-append dir "/" (col deck "id") "-" key ".zip")))
         (unless (directory-exists? dir)
@@ -553,6 +554,22 @@ Description: Builds the app's request handler. settings is an alist:
                       ("Cache-Control" . "no-store"))
                     (deck->pdf (deck-doc deck) (col deck "design") (col deck "title")
                                data-dir opts))))))))
+
+;; The deck as PowerPoint file.
+        (route! "GET" "/decks/:id/export.pptx"
+          (signed-in
+            (lambda (req params user)
+              (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                (if (not deck)
+                    (http-not-found)
+                    (make-http-response
+                     200
+                     `(("Content-Type"
+                        . "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+                       ("Content-Disposition"
+                        . ,(download-disposition (string-append (col deck "title") ".pptx")))
+                       ("Cache-Control" . "no-store"))
+                     (deck->pptx (deck-doc deck) (col deck "design") (col deck "title") data-dir)))))))
 
         ;; Everything as one zip: document, assets, PDFs, offline player.
         (route! "GET" "/decks/:id/export.zip"

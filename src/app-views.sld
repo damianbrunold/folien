@@ -253,6 +253,9 @@
                      (option (@ (value "steps")) "jeder Schritt eine Seite")))
                  (button (@ (type "submit") (class "primary")) "PDF herunterladen"))
                (p (@ (class "muted bundle-note"))
+                  (a (@ (href ,(url (string-append "/decks/" id "/export.pptx"))))
+                     "Als PowerPoint (.pptx) herunterladen")
+                  " · "
                   (a (@ (href ,(url (string-append "/decks/" id "/export.zip"))))
                      "Alles als ZIP herunterladen")
                   " – die Präsentation mit Bildern und Videos, den PDFs und einem "

@@ -11,13 +11,14 @@
         (scm string)
         (scm crypto)
         (scm png)
+        (scm zip)
         (scm test))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app model) (app assets) (app export-pdf))
+(import (app model) (app assets) (app export-pdf) (app export-pptx))
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien export pdf")
@@ -130,5 +131,34 @@
   (let ((s (text-of (deck->pdf doc "folien" "x" (mktempdir '(prefix . "folien-empty")) '()))))
     (test-equal 0 (count-of s "/Subtype /Image"))
     (test-assert (has? s "/Count 2"))))
+
+(test-group "PowerPoint"
+  (let* ((bv (deck->pptx doc "zh" "Prüfung" data-dir))
+         (file (string-append data-dir "/t.pptx")))
+    (let ((p (open-binary-output-file file))) (write-bytevector bv p) (close-port p))
+    (let ((out (get-environment-variable "FOLIEN_PPTX_OUT")))
+      (when out (let ((p (open-binary-output-file out))) (write-bytevector bv p) (close-port p))))
+    (call-with-input-zip file
+      (lambda (z)
+        (let* ((names (zip-entry-names z))
+               (part (lambda (n) (utf8->string (zip-read-entry-bytevector z n))))
+               (s1 (part "ppt/slides/slide1.xml")))
+          (test-assert "two slides (the hidden one is left out)"
+            (and (member "ppt/slides/slide2.xml" names) (not (member "ppt/slides/slide3.xml" names))))
+          (test-assert "Inter" (has? s1 "typeface=\"Inter\""))
+          (test-assert "the title text" (has? s1 "Titel mit Länge"))
+          (test-assert "bold" (has? s1 "b=\"1\""))
+          (test-assert "numbering" (has? s1 "buAutoNum"))
+          (test-assert "the link" (has? (part "ppt/slides/_rels/slide1.xml.rels") "https://www.zh.ch/"))
+          (test-assert "rotation" (has? s1 "rot=\"900000\""))
+          (test-assert "transparency" (has? s1 "<a:alpha val=\"50000\"/>"))
+          (test-assert "the cover image is cropped" (has? s1 "<a:srcRect"))
+          (test-assert "builds" (has? s1 "<p:timing>"))
+          (test-assert "notes" (has? (part "ppt/notesSlides/notesSlide1.xml") "Eine Notiz"))
+          (test-assert "the slide background" (has? (part "ppt/slides/slide2.xml") "<p:bg>"))
+          ;; RGB PNG (also the poster, stored once), RGBA PNG, SVG as PNG,
+          ;; and the GIF (PowerPoint takes GIFs)
+          (test-equal 4 (count-of (apply string-append names) "ppt/media/")))))
+    (delete-file file)))
 
 (test-end "folien export pdf")

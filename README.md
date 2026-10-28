@@ -28,7 +28,8 @@ Implemented step by step, phase by phase:
       per page, each with or without notes; builds final or step by step
 - [x] Phase 7 — zip bundle: export (document, assets, PDFs, offline player),
       import as a new deck; ZIP downloads in the lists and the archive
-- [ ] Phase 8 — PPTX export
+- [x] Phase 8 — PowerPoint export (.pptx): text, shapes, pictures, videos,
+      transitions, builds as animations, notes; also in the bundle
 - [ ] Phase 9 — sharing, snapshots, packaging
 
 ## Layout
@@ -50,6 +51,7 @@ src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-assets.sld    uploaded images and videos (content-addressed files)
 src/app-export-pdf.sld  the deck as PDF, natively with (scm pdf)
+src/app-export-pptx.sld the deck as PowerPoint file, with (scm ooxml presentation)
 src/app-bundle.sld    the deck as zip bundle and back; app-jsbundle.sld builds
                       the offline player's script
 src/app-views.sld     HTML rendering
@@ -93,7 +95,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.4.1 or later.
+Needs dabscm 2.5.0 or later.
 
 ## PDF export
 
@@ -107,6 +109,18 @@ with clickable web links. Images are embedded once each (PNG, JPEG, SVG
 rasterized), videos show their poster frame, hidden slides are left out.
 `FOLIEN_PDF_OUT=/tmp/x.pdf scm tests/test_pure_export.scm` writes a test
 deck to look at.
+
+## PowerPoint export
+
+`GET /decks/<id>/export.pptx` (on the deck page; also `exports/folien.pptx`
+in a bundle) writes every element as a positioned PowerPoint object with
+`(scm ooxml presentation)`: text boxes with the deck's formatting (bullets,
+numbering, links), shapes, lines, pictures (fitted or cropped as on the
+slide), MP4 videos with their poster (other videos as the poster), the
+layouts' decorations, slide backgrounds, transitions, builds as
+animations (zoom becomes fade) and notes. Hidden slides are left out. The
+text is in Inter (bold where the web uses Inter Black): exact where
+Inter is installed, a similar font otherwise.
 
 ## Bundles
 

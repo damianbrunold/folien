@@ -303,6 +303,11 @@
             (test-assert (has? (http-response-header r "Content-Disposition") "(Notizen) (2 pro Seite).pdf"))
             (test-equal "%PDF" (utf8->string (bytevector-copy (http-response-body r) 0 4))))
           (test-equal 400 (status (send "GET" (string-append "/decks/" id "/export.pdf?per-page=3") carol)))
+          (let ((r (send "GET" (string-append "/decks/" id "/export.pptx") carol)))
+            (test-equal 200 (status r))
+            (test-assert (has? (http-response-header r "Content-Type") "presentationml"))
+            (test-equal "PK" (utf8->string (bytevector-copy (http-response-body r) 0 2))))
+          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/export.pptx") dave)))
           (test-equal 404 (status (send "GET" (string-append "/decks/" id "/export.pdf") dave)))
           (test-assert (has? (body (send "GET" (string-append "/decks/" id) carol)) "export.pdf"))
 
@@ -436,7 +441,7 @@
                           (list "manifest.json" "presentation.json" "LIESMICH.txt"
                                 (string-append "assets/" sha ".png")
                                 "exports/folien.pdf" "exports/notizen.pdf"
-                                "exports/handout-2.pdf" "exports/handout-4.pdf"
+                                "exports/handout-2.pdf" "exports/handout-4.pdf" "exports/folien.pptx"
                                 "player/index.html" "player/deck-data.js" "player/folien-player.js"
                                 "player/css/slides.css" "player/fonts/Inter-Regular.woff2"))
                 (test-equal png (zip-read-entry-bytevector z (string-append "assets/" sha ".png")))

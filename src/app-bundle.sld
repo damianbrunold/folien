@@ -6,7 +6,8 @@
 ;;   manifest.json       format, version, title, design, the assets
 ;;   presentation.json   the document (src/app-model.sld)
 ;;   assets/<sha>.<ext>  the images and videos it uses
-;;   exports/*.pdf       slides, notes, handouts with 2 and 4 per page
+;;   exports/            slides, notes, handouts with 2 and 4 per page as
+;;                       PDF; the deck as PowerPoint file
 ;;   player/index.html   an offline player: open it in a browser
 ;;   LIESMICH.txt        what all this is
 ;;
@@ -34,6 +35,7 @@
           (app decks)
           (app assets)
           (app export-pdf)
+          (app export-pptx)
           (app jsbundle))
   (export bundle-version
           write-bundle!
@@ -130,7 +132,8 @@ Description: The asset hashes the document's elements refer to (asset
        "                      F für Vollbild, Pfeiltasten oder Leertaste zum Blättern.\n"
        "  exports/            Die Präsentation als PDF: folien.pdf (die Folien),\n"
        "                      notizen.pdf (mit Notizen), handout-2.pdf und\n"
-       "                      handout-4.pdf (2 oder 4 Folien pro Seite).\n"
+       "                      handout-4.pdf (2 oder 4 Folien pro Seite), und\n"
+       "                      folien.pptx für PowerPoint.\n"
        "  presentation.json   Die Präsentation selbst, assets/ ihre Bilder und Videos,\n"
        "  manifest.json       das Verzeichnis dazu.\n"
        "\n"
@@ -222,6 +225,7 @@ Description: Writes the bundle of deck (a row from load-deck) to the
             (zip-add-stored-entry z "exports/notizen.pdf" (pdf '((notes . #t))))
             (zip-add-stored-entry z "exports/handout-2.pdf" (pdf '((per-page . 2))))
             (zip-add-stored-entry z "exports/handout-4.pdf" (pdf '((per-page . 4))))
+            (zip-add-stored-entry z "exports/folien.pptx" (deck->pptx doc design-id title data-dir))
             (for-each (lambda (e)
                         (if (eq? (cadr e) 'text)
                             (text-entry! z (car e) (cddr e))
