@@ -276,3 +276,4 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
 }
 .error-text { color: var(--danger); }
 .bundle-note { margin: 1rem 0 0; }
+.spaced-table { margin-top: 1rem; }

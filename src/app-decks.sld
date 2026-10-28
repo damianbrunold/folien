@@ -26,6 +26,10 @@
           list-shares
           share-deck!
           unshare-deck!
+          list-snapshots
+          create-snapshot!
+          restore-snapshot!
+          delete-snapshot!
           deck-doc
           create-deck!
           create-deck-with-doc!
@@ -255,6 +259,72 @@ Description: Copies a deck the user may see, with the links to its
        "LEFT JOIN presentation_shares s ON s.presentation_id = p.id AND s.user_id = $4 "))
     (define access-where-dup
       "(p.owner_id = $4 OR (s.user_id IS NOT NULL AND p.status <> 'trashed'))")
+
+    ;; --- versions ---------------------------------------------------------
+
+    ;; True if the user may change the deck's content (active, owner or
+    ;; edit share).
+    (define (editable? db user-id id)
+      (let ((row (db-row db
+                   (string-append "SELECT p.status, " access-role " " access-from
+                                  "WHERE p.id = $1 AND " access-where)
+                   id (->int user-id))))
+        (and row
+             (equal? (col row "status") "active")
+             (member (col row "role") '("owner" "edit"))
+             #t)))
+
+    (define (list-snapshots db deck-id)
+      "Syntax: (list-snapshots db deck-id)
+Library: (app decks)
+Description: The deck's versions, newest first: id, name, revision,
+  created_at, author (username or null)."
+      (db-rows db
+        (string-append "SELECT v.id, v.name, v.revision, v.created_at, u.username AS author "
+                       "FROM snapshots v LEFT JOIN users u ON u.id = v.created_by "
+                       "WHERE v.presentation_id = $1 ORDER BY v.created_at DESC, v.id DESC")
+        deck-id))
+
+    (define (create-snapshot! db user-id deck-id name)
+      "Syntax: (create-snapshot! db user-id deck-id name)
+Library: (app decks)
+Description: Keeps the deck's current content as a version called name;
+  #f if the user may not change the deck."
+      (and (editable? db user-id deck-id)
+           (begin
+             (db-exec db
+               (string-append "INSERT INTO snapshots (presentation_id, name, title, design, doc, "
+                              "revision, created_by) SELECT id, $2, title, design, doc, revision, $3 "
+                              "FROM presentations WHERE id = $1")
+               deck-id name (->int user-id))
+             #t)))
+
+    (define (restore-snapshot! db user-id deck-id snapshot-id auto-name)
+      "Syntax: (restore-snapshot! db user-id deck-id snapshot-id auto-name)
+Library: (app decks)
+Description: Makes a version the deck's content again, after keeping the
+  current content as a version called auto-name; the revision goes up,
+  so editors open elsewhere notice. #f if not allowed or not found."
+      (and (editable? db user-id deck-id)
+           (with-db-transaction db
+             (lambda (tx)
+               (and (db-scalar tx "SELECT 1 FROM snapshots WHERE id = $1 AND presentation_id = $2"
+                               (->int snapshot-id) deck-id)
+                    (begin
+                      (create-snapshot! tx user-id deck-id auto-name)
+                      (db-exec tx
+                        (string-append "UPDATE presentations p SET doc = v.doc, title = v.title, "
+                                       "design = v.design, revision = p.revision + 1, updated_at = now() "
+                                       "FROM snapshots v WHERE v.id = $1 AND p.id = $2")
+                        (->int snapshot-id) deck-id)
+                      #t))))))
+
+    (define (delete-snapshot! db user-id deck-id snapshot-id)
+      (and (editable? db user-id deck-id)
+           (begin
+             (db-exec db "DELETE FROM snapshots WHERE id = $1 AND presentation_id = $2"
+                      (->int snapshot-id) deck-id)
+             #t)))
 
     (define (delete-deck! db owner-id id)
       "Syntax: (delete-deck! db owner-id id)

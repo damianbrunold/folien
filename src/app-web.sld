@@ -89,7 +89,11 @@
         ("unshared"       success . "Freigabe entfernt.")
         ("no-user"        error   . "Diesen Benutzer gibt es nicht.")
         ("not-owner"      error   . "Das kann nur, wem die Präsentation gehört.")
-        ("read-only"      error   . "Sie können diese Präsentation nur ansehen.")))
+        ("read-only"      error   . "Sie können diese Präsentation nur ansehen.")
+        ("version-saved"  success . "Version gespeichert.")
+        ("version-restored" success . "Version wiederhergestellt; der bisherige Stand ist als Version gespeichert.")
+        ("version-deleted" success . "Version gelöscht.")
+        ("bad-name"       error   . "Der Name muss 1 bis 200 Zeichen lang sein.")))
 
     (define (notice-from-query req)
       (let* ((q (url-query-params (http-request-url req)))
@@ -402,6 +406,9 @@ Description: Builds the app's request handler. settings is an alist:
                                 (notice-from-query req)
                                 (if (equal? (col deck "role") "owner")
                                     (list-shares db (col deck "id"))
+                                    '())
+                                (if (can-edit? (col deck "role"))
+                                    (list-snapshots db (col deck "id"))
                                     '())))
                     (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
                                         (not-found-page (who user))))))))
@@ -420,6 +427,40 @@ Description: Builds the app's request handler. settings is an alist:
                   ((not (can-edit? (col deck "role")))
                    (redirect (string-append "/decks/" (col deck "id") "?m=read-only")))
                   (else (html-response (editor-page deck))))))))
+
+;; Versions: save (field name), restore, delete; for editors.
+        (route! "POST" "/decks/:id/versions"
+          (signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (name (form-ref (http-request-form req) "name" "")))
+                (redirect
+                 (string-append
+                  "/decks/" id "?m="
+                  (cond ((not (valid-title? name)) "bad-name")
+                        ((create-snapshot! db (col user "id") id name) "version-saved")
+                        (else "read-only"))
+                  "#versions"))))))
+
+        (route! "POST" "/decks/:id/versions/:vid/restore"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (redirect
+                 (string-append
+                  "/decks/" id "?m="
+                  (if (restore-snapshot! db (col user "id") id (params-ref params "vid")
+                                         "Stand vor dem Wiederherstellen")
+                      "version-restored"
+                      "read-only")
+                  "#versions"))))))
+
+        (route! "POST" "/decks/:id/versions/:vid/delete"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (delete-snapshot! db (col user "id") id (params-ref params "vid"))
+                (redirect (string-append "/decks/" id "?m=version-deleted#versions"))))))
 
         ;; Sharing (the owner only): form fields username, role.
         (route! "POST" "/decks/:id/shares"

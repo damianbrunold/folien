@@ -92,11 +92,12 @@
   (define (status r) (http-response-status r))
   ;; The deck id from a redirect to /decks/<id>.
   (define (deck-id-of r) (substring (location r) 7 (string-length (location r))))
+  (define (id->string x) (if (number? x) (number->string x) x))
   (define (user-id name) (let ((id (col (find-user-by-name db name) "id")))
                            (if (number? id) (number->string id) id)))
 
   ;; A fresh schema, and an admin as bin/seed-admin.scm makes one.
-  (db-exec db "DROP TABLE IF EXISTS presentation_shares, presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
+  (db-exec db "DROP TABLE IF EXISTS snapshots, presentation_shares, presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
   (parameterize ((log-port (open-output-string)))
     (migrate! db (string-append root "/migrations")))
   (with-db-transaction db
@@ -559,6 +560,34 @@
         (test-equal 404 (status (send "GET" api gina)))
         (send "POST" (string-append page "/restore") frank)
         (test-equal 200 (status (send "GET" api gina)))
+        ;; Versions: gina (edit) saves one, changes the deck, restores it.
+        (test-equal (string-append page "?m=version-saved#versions")
+                    (location (send "POST" (string-append page "/versions") gina "name=Erster+Stand")))
+        (test-assert (has? (body (send "GET" page gina)) "Erster Stand"))
+        (let* ((before (jref (json-body (send "GET" api gina)) "doc"))
+               (two `(("format" . 1)
+                      ("slides" . ,(vector (vector-ref (doc-slides before) 0) (new-slide "folien" "blank"))))))
+          (test-equal 200 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,two)))))
+          (test-equal 2 (vector-length (doc-slides (jref (json-body (send "GET" api gina)) "doc"))))
+          (let* ((vid (id->string (db-scalar db "SELECT id FROM snapshots WHERE presentation_id = $1 AND name = $2"
+                                             id "Erster Stand")))
+                 (r-before (rev)))
+            (test-equal (string-append page "?m=version-restored#versions")
+                        (location (send "POST" (string-append page "/versions/" vid "/restore") gina)))
+            (test-equal 1 (vector-length (doc-slides (jref (json-body (send "GET" api gina)) "doc"))))
+            (test-equal (+ r-before 1) (rev))
+            ;; the changed state was kept
+            (test-assert (has? (body (send "GET" page gina)) "Stand vor dem Wiederherstellen"))
+            (test-equal (string-append page "?m=bad-name#versions")
+                        (location (send "POST" (string-append page "/versions") gina "name=")))
+            (send "POST" (string-append page "/versions/" vid "/delete") gina)
+            (test-assert (not (has? (body (send "GET" page gina)) "Erster Stand")))))
+        ;; a viewer can not
+        (send "POST" (string-append page "/shares") frank "username=gina&role=view")
+        (test-equal (string-append page "?m=read-only#versions")
+                    (location (send "POST" (string-append page "/versions") gina "name=Nein")))
+        (test-assert "no versions card for viewers" (not (has? (body (send "GET" page gina)) "id=\"versions\"")))
+
         ;; unshare
         (test-equal (string-append page "?m=unshared")
                     (location (send "POST" (string-append page "/shares/" gina-id "/delete") frank)))
