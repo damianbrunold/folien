@@ -12,6 +12,7 @@
 
 (define-library (app decks)
   (import (scheme base)
+          (scheme char)
           (scm system)
           (scm json simple)
           (app db)
@@ -26,6 +27,11 @@
           list-shares
           share-deck!
           unshare-deck!
+          list-templates
+          set-template!
+          set-tags!
+          parse-tags
+          deck-tags
           list-snapshots
           create-snapshot!
           restore-snapshot!
@@ -51,18 +57,45 @@
       (and (string? s) (<= 1 (string-length s) 200)))
 
     (define summary-columns
-      "id, title, design, status, revision, created_at, updated_at, status_at")
+      "id, title, design, status, revision, created_at, updated_at, status_at, tags::text AS tags, is_template")
 
-    (define (list-decks db owner-id status)
-      "Syntax: (list-decks db owner-id status)
+    ;; --- search ---------------------------------------------------------
+
+    ;; q for ILIKE, with its wildcards taken literally.
+    (define (like-pattern q)
+      (string-append
+       "%"
+       (let loop ((cs (string->list q)) (acc '()))
+         (if (null? cs)
+             (list->string (reverse acc))
+             (loop (cdr cs)
+                   (if (memv (car cs) '(#\\ #\% #\_))
+                       (cons (car cs) (cons #\\ acc))
+                       (cons (car cs) acc)))))
+       "%"))
+
+    ;; SQL conditions for a search text ($a) and a tag ($b), each '' for
+    ;; none; p is the presentations table.
+    (define (filter-sql a b)
+      (string-append
+       " AND ($" a " = '%%' OR p.title ILIKE $" a " OR EXISTS "
+       "(SELECT 1 FROM jsonb_array_elements_text(p.tags) t WHERE t ILIKE $" a "))"
+       " AND ($" b " = '' OR p.tags ? $" b ")"))
+
+    (define (list-decks db owner-id status . filters)
+      "Syntax: (list-decks db owner-id status [query [tag]])
 Library: (app decks)
 Description: The owner's decks with status (\"active\", \"archived\",
-  \"trashed\"), most recently changed first, without their documents."
-      (db-rows db
-        (string-append "SELECT " summary-columns " FROM presentations "
-                       "WHERE owner_id = $1 AND status = $2 "
-                       "ORDER BY updated_at DESC")
-        (->int owner-id) status))
+  \"trashed\"), most recently changed first, without their documents;
+  only those whose title or a tag contains query and that have tag, if
+  given (\"\" for none)."
+      (let ((q (if (pair? filters) (car filters) ""))
+            (tag (if (and (pair? filters) (pair? (cdr filters))) (cadr filters) "")))
+        (db-rows db
+          (string-append "SELECT " summary-columns " FROM presentations p "
+                         "WHERE owner_id = $1 AND status = $2" (filter-sql "3" "4")
+                         " ORDER BY updated_at DESC")
+          (->int owner-id) status (like-pattern q) tag)))
 
     ;; The decks a user may see, with their role: owner, edit or view.
     (define access-from
@@ -85,6 +118,7 @@ Description: The deck row with id, including doc (as JSON text), role
       (db-row db
         (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.created_at, "
                        "p.updated_at, p.status_at, p.doc::text AS doc, u.username AS owner_name, "
+                       "p.tags::text AS tags, p.is_template, "
                        access-role " " access-from
                        "WHERE p.id = $1 AND " access-where)
         id (->int user-id)))
@@ -114,18 +148,87 @@ Library: (app decks)
 Description: True for the owner and edit shares."
       (and (member role '("owner" "edit")) #t))
 
-    (define (list-shared-decks db user-id)
-      "Syntax: (list-shared-decks db user-id)
+    (define (list-shared-decks db user-id . filters)
+      "Syntax: (list-shared-decks db user-id [query [tag]])
 Library: (app decks)
 Description: The active and archived decks shared with the user, most
-  recently changed first, with role and owner_name."
+  recently changed first, with role and owner_name; filtered as by
+  list-decks."
+      (let ((q (if (pair? filters) (car filters) ""))
+            (tag (if (and (pair? filters) (pair? (cdr filters))) (cadr filters) "")))
+        (db-rows db
+          (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.updated_at, "
+                         "p.status_at, p.tags::text AS tags, p.is_template, s.role, u.username AS owner_name "
+                         "FROM presentation_shares s JOIN presentations p ON p.id = s.presentation_id "
+                         "JOIN users u ON u.id = p.owner_id "
+                         "WHERE s.user_id = $1 AND p.status <> 'trashed'" (filter-sql "2" "3")
+                         " ORDER BY p.updated_at DESC")
+          (->int user-id) (like-pattern q) tag)))
+
+    ;; --- templates and tags -------------------------------------------------
+
+    (define (list-templates db user-id)
+      "Syntax: (list-templates db user-id)
+Library: (app decks)
+Description: The active templates the user may start from (their own
+  and those shared with them): id, title, design, owner_name."
       (db-rows db
-        (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.updated_at, "
-                       "p.status_at, s.role, u.username AS owner_name "
-                       "FROM presentation_shares s JOIN presentations p ON p.id = s.presentation_id "
-                       "JOIN users u ON u.id = p.owner_id "
-                       "WHERE s.user_id = $1 AND p.status <> 'trashed' ORDER BY p.updated_at DESC")
+        (string-append "SELECT p.id, p.title, p.design, u.username AS owner_name "
+                       "FROM presentations p JOIN users u ON u.id = p.owner_id "
+                       "LEFT JOIN presentation_shares s ON s.presentation_id = p.id AND s.user_id = $1 "
+                       "WHERE p.is_template AND p.status = 'active' "
+                       "AND (p.owner_id = $1 OR s.user_id IS NOT NULL) ORDER BY lower(p.title)")
         (->int user-id)))
+
+    (define (set-template! db owner-id id on?)
+      (db-exec db "UPDATE presentations SET is_template = $1 WHERE id = $2 AND owner_id = $3"
+               on? id (->int owner-id)))
+
+    (define (parse-tags text)
+      "Syntax: (parse-tags text)
+Library: (app decks)
+Description: Tags from comma-separated text: trimmed, without empty and
+  duplicate ones, at most 20 of at most 40 characters."
+      (let loop ((parts (split-commas text)) (acc '()))
+        (cond ((or (null? parts) (= (length acc) 20)) (reverse acc))
+              (else
+               (let ((t (trim (car parts))))
+                 (loop (cdr parts)
+                       (if (or (string=? t "") (> (string-length t) 40) (member t acc))
+                           acc
+                           (cons t acc))))))))
+
+    (define (split-commas s)
+      (let loop ((i 0) (start 0) (acc '()))
+        (cond ((= i (string-length s)) (reverse (cons (substring s start i) acc)))
+              ((char=? (string-ref s i) #\,) (loop (+ i 1) (+ i 1) (cons (substring s start i) acc)))
+              (else (loop (+ i 1) start acc)))))
+
+    (define (trim s)
+      (let* ((n (string-length s))
+             (a (let loop ((i 0)) (if (and (< i n) (char-whitespace? (string-ref s i))) (loop (+ i 1)) i)))
+             (b (let loop ((j n)) (if (and (> j a) (char-whitespace? (string-ref s (- j 1)))) (loop (- j 1)) j))))
+        (substring s a b)))
+
+    (define (set-tags! db user-id id tags)
+      "Syntax: (set-tags! db user-id id tags)
+Library: (app decks)
+Description: Sets the tags (a list of strings) of a deck the user may
+  change."
+      (db-exec db
+        (string-append "UPDATE presentations SET tags = $1::jsonb WHERE id = $2 "
+                       "AND (owner_id = $3 OR EXISTS (SELECT 1 FROM presentation_shares "
+                       "WHERE presentation_id = $2 AND user_id = $3 AND role = 'edit'))")
+        (json->string (list->vector tags)) id (->int user-id)))
+
+    (define (deck-tags row)
+      "Syntax: (deck-tags row)
+Library: (app decks)
+Description: The tags of a deck row (a list of strings)."
+      (let ((p (assoc "tags" row)))
+        (if (and p (string? (cdr p)))
+            (vector->list (json-parse (cdr p)))
+            '())))
 
     (define (list-shares db deck-id)
       "Syntax: (list-shares db deck-id)

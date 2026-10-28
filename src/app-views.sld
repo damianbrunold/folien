@@ -6,6 +6,8 @@
 (define-library (app views)
   (import (scheme base)
           (scm html builder)
+          (scm uri)
+          (app decks)
           (app site)
           (app designs)
           (app users))            ; col
@@ -149,7 +151,26 @@
             ((equal? role "view") "darf ansehen")
             (else "")))
 
-    (define (deck-row deck)
+    (define (list-path status)
+      (cond ((string=? status "archived") "/archive")
+            ((string=? status "trashed") "/trash")
+            ((string=? status "shared") "/shared")
+            (else "/")))
+
+    (define (tag-chips status tags)
+      (if (null? tags)
+          ""
+          `(span (@ (class "tags"))
+             ,@(map (lambda (t)
+                      `(a (@ (class "tag")
+                             (href ,(url (string-append (list-path status) "?tag=" (percent-encode t)))))
+                          ,t))
+                    tags))))
+
+    (define (deck-row-for status)
+      (lambda (deck) (deck-row deck status)))
+
+    (define (deck-row deck . list-status)
       (let* ((id (col deck "id"))
              (status (col deck "status"))
              (role (let ((p (assoc "role" deck))) (if p (cdr p) "owner")))
@@ -158,7 +179,11 @@
           (td ,(if (string=? status "trashed")
                    (col deck "title")
                    `(a (@ (href ,(url (string-append "/decks/" id (if editable? "/edit" "")))))
-                       ,(col deck "title"))))
+                       ,(col deck "title")))
+              ,(if (member (let ((p (assoc "is_template" deck))) (and p (cdr p))) '(#t "t" "true"))
+                   '(span (@ (class "badge")) "Vorlage")
+                   "")
+              ,(tag-chips (if (pair? list-status) (car list-status) status) (deck-tags deck)))
           ,@(if (string=? role "owner")
                 '()
                 `((td ,(col deck "owner_name"))
@@ -185,9 +210,9 @@
                                    ((string=? status "archived") "Archiviert")
                                    (else "Gelöscht")))
                         (th "")))
-             (tbody ,@(map deck-row decks)))))
+             (tbody ,@(map (deck-row-for status) decks)))))
 
-    (define (new-deck-form)
+    (define (new-deck-form templates)
       `(form (@ (method "post") (action ,(url "/decks")) (class "row-form"))
          (input (@ (name "title") (placeholder "Titel der neuen Präsentation")
                    (aria-label "Titel") (maxlength "200") (required #t)))
@@ -195,10 +220,35 @@
            ,@(map (lambda (d)
                     `(option (@ (value ,(design-ref d "id"))) ,(design-ref d "name")))
                   designs))
+         ,(if (null? templates)
+              ""
+              `(select (@ (name "template") (aria-label "Vorlage"))
+                 (option (@ (value "")) "ohne Vorlage")
+                 ,@(map (lambda (t)
+                          `(option (@ (value ,(col t "id")))
+                                   ,(string-append "Vorlage: " (col t "title"))))
+                        templates)))
          (button (@ (type "submit") (class "primary")) "Erstellen")))
 
+    ;; The search form of a list, and the tag it is filtered by.
+    (define (search-bar status filters)
+      (let ((q (car filters)) (tag (cdr filters)))
+        `(div (@ (class "search-bar"))
+           (form (@ (method "get") (action ,(url (list-path status))) (class "row-form"))
+             (input (@ (name "q") (type "search") (value ,q) (placeholder "Titel oder Stichwort suchen")
+                       (aria-label "Suchen")))
+             ,(if (string=? tag "") "" `(input (@ (type "hidden") (name "tag") (value ,tag))))
+             (button (@ (type "submit")) "Suchen"))
+           ,(if (and (string=? q "") (string=? tag ""))
+                ""
+                `(p (@ (class "muted"))
+                    ,(if (string=? tag "") "" `(span "Stichwort " (strong ,tag) " "))
+                    ,(if (string=? q "") "" `(span "Suche «" ,q "» "))
+                    (a (@ (href ,(url (list-path status)))) "alle zeigen"))))))
+
     ;; status: "active", "archived", "trashed" or "shared" (with me).
-    (define (decks-page who status decks msg)
+    ;; filters: (query . tag); templates: for the new-deck form.
+    (define (decks-page who status decks msg filters templates)
       (let ((title (cond ((string=? status "active") "Präsentationen")
                          ((string=? status "archived") "Archiv")
                          ((string=? status "shared") "Mit mir geteilt")
@@ -208,7 +258,7 @@
              (h2 ,title)
              ,(notice msg)
              ,(if (string=? status "active")
-                  `(div (@ (class "card")) (h3 "Neue Präsentation") ,(new-deck-form)
+                  `(div (@ (class "card")) (h3 "Neue Präsentation") ,(new-deck-form templates)
                      (div (@ (class "import-row"))
                        (label (@ (class "button small file-button"))
                          "Aus ZIP importieren …"
@@ -229,11 +279,18 @@
                       "Präsentationen im Papierkorb können wiederhergestellt "
                       "oder endgültig gelöscht werden.")
                   "")
+             ,(search-bar status filters)
              ,(deck-table decks status)))))
 
     ;; --- one deck -----------------------------------------------------
     ;; The deck's facts, actions and rename form; below them the viewer
     ;; (static/js/viewer.js), which loads the deck from the JSON API.
+
+    (define (join-tags tags)
+      (let loop ((ts tags) (acc ""))
+        (cond ((null? ts) acc)
+              ((string=? acc "") (loop (cdr ts) (car ts)))
+              (else (loop (cdr ts) (string-append acc ", " (car ts)))))))
 
     (define (shares-card id shares)
       `(section (@ (class "card spaced-card"))
@@ -354,6 +411,26 @@
                      (input (@ (name "title") (value ,(col deck "title")) (aria-label "Titel")
                                (maxlength "200") (required #t)))
                      (button (@ (type "submit")) "Umbenennen"))
+                  "")
+             ,(if active?
+                  `(section (@ (class "card spaced-card"))
+                     (h3 "Stichwörter")
+                     (form (@ (method "post") (action ,(url (string-append "/decks/" id "/tags")))
+                              (class "row-form"))
+                       (input (@ (name "tags") (value ,(join-tags (deck-tags deck)))
+                                 (placeholder "z. B. Bericht, 2026, Gesundheit") (aria-label "Stichwörter")))
+                       (button (@ (type "submit")) "Speichern"))
+                     ,(if owner?
+                          (let ((on? (member (col deck "is_template") '(#t "t" "true"))))
+                            `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/template")))
+                                      (class "row-form"))
+                               (input (@ (type "hidden") (name "on") (value ,(if on? "0" "1"))))
+                               (span (@ (class "muted"))
+                                     ,(if on? "Diese Präsentation ist eine Vorlage. "
+                                          "Als Vorlage steht eine Präsentation beim Erstellen zur Wahl. "))
+                               (button (@ (type "submit"))
+                                       ,(if on? "Keine Vorlage mehr" "Als Vorlage verwenden"))))
+                          ""))
                   "")
              ,(if active? (versions-card id versions) "")
              ,(if (and owner? (not (string=? status "trashed"))) (shares-card id shares) ""))

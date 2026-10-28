@@ -594,6 +594,51 @@
         (test-equal 404 (status (send "GET" api gina)))
         (test-equal 404 (status (send "GET" (string-append api "/assets/" sha) gina)))))
 
+    (test-group "tags, search, templates"
+      (send "POST" "/admin/users" admin "username=hana&password=hanapassword")
+      (let* ((hana (sign-in "hana" "hanapassword"))
+             (mk (lambda (title) (deck-id-of (send "POST" "/decks" hana (string-append "title=" title "&design=zh")))))
+             (a (mk "Budget+2026"))
+             (b (mk "Strategie"))
+             (c (mk "100%25+sicher")))
+        (test-equal (string-append "/decks/" a "?m=tags-saved")
+                    (location (send "POST" (string-append "/decks/" a "/tags") hana "tags=Finanzen,+2026,+,Finanzen")))
+        (send "POST" (string-append "/decks/" b "/tags") hana "tags=Planung")
+        (test-assert (has? (body (send "GET" (string-append "/decks/" a) hana)) "value=\"Finanzen, 2026\""))
+        (let ((list-of (lambda (q) (body (send "GET" (string-append "/" q) hana)))))
+          (test-assert (has? (list-of "") "class=\"tag\""))
+          ;; search: title or tag, case-insensitive
+          (test-assert (has? (list-of "?q=budget") "Budget 2026"))
+          (test-assert (not (has? (list-of "?q=budget") "Strategie")))
+          (test-assert "a tag matches" (has? (list-of "?q=planung") "Strategie"))
+          ;; a percent sign is a percent sign
+          (test-assert (has? (list-of "?q=%25") "100% sicher"))
+          (test-assert (not (has? (list-of "?q=%25") "Budget")))
+          ;; tag filter
+          (test-assert (has? (list-of "?tag=Finanzen") "Budget 2026"))
+          (test-assert (not (has? (list-of "?tag=Finanzen") "Strategie")))
+          (test-assert (has? (list-of "?tag=Finanzen") "alle zeigen")))
+        ;; templates
+        (test-assert "no templates yet" (not (has? (body (send "GET" "/" hana)) "name=\"template\"")))
+        (test-equal (string-append "/decks/" b "?m=template-on")
+                    (location (send "POST" (string-append "/decks/" b "/template") hana "on=1")))
+        (test-assert (has? (body (send "GET" "/" hana)) "Vorlage: Strategie"))
+        (let* ((r (send "POST" "/decks" hana (string-append "title=Aus+Vorlage&design=folien&template=" b)))
+               (new-id (substring (location r) 7 (- (string-length (location r)) 5)))
+               (deck (json-body (send "GET" (string-append "/api/decks/" new-id) hana))))
+          (test-assert (has? (location r) "/edit"))
+          (test-equal "Aus Vorlage" (jref deck "title"))
+          (test-equal "zh" (jref deck "design")))
+        ;; someone else's templates only when shared
+        (let ((dave (sign-in "dave" "davepassword")))
+          (test-assert (not (has? (body (send "GET" "/" dave)) "Vorlage: Strategie")))
+          (test-equal "/?m=no-template"
+                      (location (send "POST" "/decks" dave (string-append "title=X&design=zh&template=" b))))
+          (send "POST" (string-append "/decks/" b "/shares") hana "username=dave&role=view")
+          (test-assert (has? (body (send "GET" "/" dave)) "Vorlage: Strategie")))
+        (send "POST" (string-append "/decks/" b "/template") hana "on=0")
+        (test-assert (not (has? (body (send "GET" "/" hana)) "Vorlage: Strategie")))))
+
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))
         (create-user! db "old" (password-hash "oldpassword")))

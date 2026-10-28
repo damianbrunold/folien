@@ -93,7 +93,18 @@
         ("version-saved"  success . "Version gespeichert.")
         ("version-restored" success . "Version wiederhergestellt; der bisherige Stand ist als Version gespeichert.")
         ("version-deleted" success . "Version gelöscht.")
-        ("bad-name"       error   . "Der Name muss 1 bis 200 Zeichen lang sein.")))
+        ("bad-name"       error   . "Der Name muss 1 bis 200 Zeichen lang sein.")
+        ("tags-saved"     success . "Stichwörter gespeichert.")
+        ("template-on"    success . "Die Präsentation steht jetzt als Vorlage zur Wahl.")
+        ("template-off"   success . "Die Präsentation ist keine Vorlage mehr.")
+        ("no-template"    error   . "Diese Vorlage gibt es nicht (mehr).")))
+
+    ;; The search text and tag of a list page's query string ("" if none).
+    (define (list-filters req)
+      (let* ((q (url-query-params (http-request-url req)))
+             (get (lambda (k) (let ((p (assoc k q))) (if p (cdr p) "")))))
+        (cons (let ((s (get "q"))) (if (> (string-length s) 100) (substring s 0 100) s))
+              (get "tag"))))
 
     (define (notice-from-query req)
       (let* ((q (url-query-params (http-request-url req)))
@@ -343,9 +354,12 @@ Description: Builds the app's request handler. settings is an alist:
         (define (list-page status)
           (signed-in
             (lambda (req params user)
-              (html-response
-               (decks-page (who user) status (list-decks db (col user "id") status)
-                           (notice-from-query req))))))
+              (let ((f (list-filters req)))
+                (html-response
+                 (decks-page (who user) status
+                             (list-decks db (col user "id") status (car f) (cdr f))
+                             (notice-from-query req) f
+                             (if (string=? status "active") (list-templates db (col user "id")) '())))))))
 
         ;; A full-window page of the owner's deck (any status).
         (define (deck-app-page render)
@@ -376,9 +390,10 @@ Description: Builds the app's request handler. settings is an alist:
         (route! "GET" "/shared"
           (signed-in
             (lambda (req params user)
-              (html-response
-               (decks-page (who user) "shared" (list-shared-decks db (col user "id"))
-                           (notice-from-query req))))))
+              (let ((f (list-filters req)))
+                (html-response
+                 (decks-page (who user) "shared" (list-shared-decks db (col user "id") (car f) (cdr f))
+                             (notice-from-query req) f '()))))))
 
         ;; --- decks ---
 
@@ -387,9 +402,20 @@ Description: Builds the app's request handler. settings is an alist:
             (lambda (req params user)
               (let* ((form (http-request-form req))
                      (title (form-ref form "title" ""))
-                     (design (form-ref form "design" default-design-id)))
+                     (design (form-ref form "design" default-design-id))
+                     (template (form-ref form "template" "")))
                 (cond
                   ((not (valid-title? title)) (redirect "/?m=bad-title"))
+                  ((not (string=? template ""))
+                   ;; From a template: a copy of it (with its images).
+                   (let ((tmpl (let find ((ts (list-templates db (col user "id"))))
+                                 (cond ((null? ts) #f)
+                                       ((equal? (col (car ts) "id") template) (car ts))
+                                       (else (find (cdr ts)))))))
+                     (if tmpl
+                         (redirect (string-append
+                                    "/decks/" (duplicate-deck! db (col user "id") template title) "/edit"))
+                         (redirect "/?m=no-template"))))
                   ((not (find-design design)) (redirect "/?m=bad-design"))
                   (else
                    (redirect (string-append
@@ -428,7 +454,24 @@ Description: Builds the app's request handler. settings is an alist:
                    (redirect (string-append "/decks/" (col deck "id") "?m=read-only")))
                   (else (html-response (editor-page deck))))))))
 
-;; Versions: save (field name), restore, delete; for editors.
+;; Tags (field tags, comma-separated); for editors.
+        (route! "POST" "/decks/:id/tags"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (set-tags! db (col user "id") id (parse-tags (form-ref (http-request-form req) "tags" "")))
+                (redirect (string-append "/decks/" id "?m=tags-saved"))))))
+
+        ;; Template on or off (field on: 1 or 0); for the owner.
+        (route! "POST" "/decks/:id/template"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id"))
+                    (on? (equal? (form-ref (http-request-form req) "on" "0") "1")))
+                (set-template! db (col user "id") id on?)
+                (redirect (string-append "/decks/" id "?m=" (if on? "template-on" "template-off")))))))
+
+        ;; Versions: save (field name), restore, delete; for editors.
         (route! "POST" "/decks/:id/versions"
           (signed-in
             (lambda (req params user)

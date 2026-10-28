@@ -277,3 +277,26 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
 .error-text { color: var(--danger); }
 .bundle-note { margin: 1rem 0 0; }
 .spaced-table { margin-top: 1rem; }
+
+/* Tags and templates in the lists; the search bar. */
+.tags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; margin-left: 0.5rem; }
+.tag {
+  padding: 0 0.45rem;
+  font-size: 0.8rem;
+  color: var(--chip-fg);
+  background: var(--chip);
+  border-radius: 999px;
+  text-decoration: none;
+}
+.tag:hover { text-decoration: underline; }
+.badge {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.3rem;
+}
+.search-bar { margin: 1.5rem 0 0.5rem; }
+.search-bar .row-form { margin: 0; max-width: 34rem; }
+.search-bar p { margin: 0.5rem 0 0; }
