@@ -96,7 +96,7 @@
                            (if (number? id) (number->string id) id)))
 
   ;; A fresh schema, and an admin as bin/seed-admin.scm makes one.
-  (db-exec db "DROP TABLE IF EXISTS presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
+  (db-exec db "DROP TABLE IF EXISTS presentation_shares, presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
   (parameterize ((log-port (open-output-string)))
     (migrate! db (string-append root "/migrations")))
   (with-db-transaction db
@@ -499,6 +499,71 @@
                           (,(string-append "assets/" sha ".png") . ,(bytevector-append png (bytevector 1)))))
                    "Prüfsumme")
           (test-equal before (count-decks)))))
+
+    (test-group "sharing"
+      (send "POST" "/admin/users" admin "username=frank&password=frankpassword")
+      (send "POST" "/admin/users" admin "username=gina&password=ginapassword")
+      (let* ((frank (sign-in "frank" "frankpassword"))
+             (gina (sign-in "gina" "ginapassword"))
+             (id (deck-id-of (send "POST" "/decks" frank "title=Geteilt&design=folien")))
+             (api (string-append "/api/decks/" id))
+             (page (string-append "/decks/" id))
+             (png (bytevector-append (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A) (make-bytevector 20 3)))
+             (sha (jref (json-body (send-bytes "POST" (string-append api "/assets") frank png)) "sha"))
+             (gina-id (user-id "gina"))
+             (doc (jref (json-body (send "GET" api frank)) "doc"))
+             (rev (lambda () (jref (json-body (send "GET" api frank)) "revision")))
+             (status-of (lambda () (jref (json-body (send "GET" api frank)) "status"))))
+        (test-equal "not shared yet" 404 (status (send "GET" api gina)))
+        (test-assert (not (has? (body (send "GET" "/shared" gina)) (string-append "/decks/" id))))
+        ;; View
+        (test-equal (string-append page "?m=shared")
+                    (location (send "POST" (string-append page "/shares") frank "username=gina&role=view")))
+        (test-assert (has? (body (send "GET" "/shared" gina)) (string-append "/decks/" id)))
+        (test-assert (has? (body (send "GET" "/shared" gina)) "darf ansehen"))
+        (test-equal 200 (status (send "GET" api gina)))
+        (test-equal "view" (jref (json-body (send "GET" api gina)) "role"))
+        (test-assert (has? (body (send "GET" page gina)) "von frank, Sie dürfen ansehen"))
+        (test-assert "no sharing card for others" (not (has? (body (send "GET" page gina)) "Freigeben</h3>")))
+        (test-assert (has? (body (send "GET" page frank)) "Freigeben</h3>"))
+        (test-equal 403 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,doc)))))
+        (test-equal (string-append page "?m=read-only") (location (send "GET" (string-append page "/edit") gina)))
+        (test-equal (string-append page "?m=read-only")
+                    (location (send "POST" (string-append page "/rename") gina "title=Gekapert")))
+        (test-equal 200 (status (send "GET" (string-append api "/assets/" sha) gina)))
+        (test-equal 403 (status (send-bytes "POST" (string-append api "/assets") gina png)))
+        (test-equal 200 (status (send "GET" (string-append page "/export.pdf") gina)))
+        (test-equal 200 (status (send "GET" (string-append page "/present") gina)))
+        ;; only the owner archives, trashes, deletes, shares
+        (send "POST" (string-append page "/archive") gina)
+        (send "POST" (string-append page "/trash") gina)
+        (test-equal "active" (status-of))
+        (test-equal (string-append page "?m=not-owner")
+                    (location (send "POST" (string-append page "/shares") gina "username=dave&role=edit")))
+        ;; a copy for gina is hers
+        (send "POST" (string-append page "/duplicate") gina)
+        (test-assert (has? (body (send "GET" "/" gina)) "Geteilt (Kopie)"))
+        ;; Edit
+        (send "POST" (string-append page "/shares") frank "username=gina&role=edit")
+        (test-equal "edit" (jref (json-body (send "GET" api gina)) "role"))
+        (test-equal 200 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,doc)))))
+        (test-equal 201 (status (send-bytes "POST" (string-append api "/assets") gina
+                                            (bytevector-append png (bytevector 9)))))
+        (test-equal 200 (status (send "GET" (string-append page "/edit") gina)))
+        (test-equal (string-append page "?m=no-user")
+                    (location (send "POST" (string-append page "/shares") frank "username=nobody&role=view")))
+        (test-equal (string-append page "?m=not-owner")
+                    (location (send "POST" (string-append page "/shares") frank "username=frank&role=view")))
+        ;; in the trash, the deck is gone for those it is shared with
+        (send "POST" (string-append page "/trash") frank)
+        (test-equal 404 (status (send "GET" api gina)))
+        (send "POST" (string-append page "/restore") frank)
+        (test-equal 200 (status (send "GET" api gina)))
+        ;; unshare
+        (test-equal (string-append page "?m=unshared")
+                    (location (send "POST" (string-append page "/shares/" gina-id "/delete") frank)))
+        (test-equal 404 (status (send "GET" api gina)))
+        (test-equal 404 (status (send "GET" (string-append api "/assets/" sha) gina)))))
 
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))

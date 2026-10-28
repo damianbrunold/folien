@@ -84,7 +84,12 @@
         ("deleted"        success . "Präsentation endgültig gelöscht.")
         ("renamed"        success . "Präsentation umbenannt.")
         ("bad-title"      error   . "Der Titel muss 1 bis 200 Zeichen lang sein.")
-        ("bad-design"     error   . "Unbekanntes Design.")))
+        ("bad-design"     error   . "Unbekanntes Design.")
+        ("shared"         success . "Freigabe gespeichert.")
+        ("unshared"       success . "Freigabe entfernt.")
+        ("no-user"        error   . "Diesen Benutzer gibt es nicht.")
+        ("not-owner"      error   . "Das kann nur, wem die Präsentation gehört.")
+        ("read-only"      error   . "Sie können diese Präsentation nur ansehen.")))
 
     (define (notice-from-query req)
       (let* ((q (url-query-params (http-request-url req)))
@@ -118,6 +123,8 @@
         ("design" . ,(col deck "design"))
         ("status" . ,(col deck "status"))
         ("revision" . ,(->int (col deck "revision")))
+        ("role" . ,(col deck "role"))
+        ("owner" . ,(col deck "owner_name"))
         ("doc" . ,(deck-doc deck))))
 
     ;; --- assets ---------------------------------------------------------
@@ -362,6 +369,12 @@ Description: Builds the app's request handler. settings is an alist:
         (route! "GET" "/" (list-page "active"))
         (route! "GET" "/archive" (list-page "archived"))
         (route! "GET" "/trash" (list-page "trashed"))
+        (route! "GET" "/shared"
+          (signed-in
+            (lambda (req params user)
+              (html-response
+               (decks-page (who user) "shared" (list-shared-decks db (col user "id"))
+                           (notice-from-query req))))))
 
         ;; --- decks ---
 
@@ -386,7 +399,10 @@ Description: Builds the app's request handler. settings is an alist:
                     (html-response
                      (deck-page (who user) deck
                                 (vector-length (doc-slides (deck-doc deck)))
-                                (notice-from-query req)))
+                                (notice-from-query req)
+                                (if (equal? (col deck "role") "owner")
+                                    (list-shares db (col deck "id"))
+                                    '())))
                     (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
                                         (not-found-page (who user))))))))
 
@@ -401,17 +417,44 @@ Description: Builds the app's request handler. settings is an alist:
                                        (not-found-page (who user))))
                   ((not (string=? (col deck "status") "active"))
                    (redirect (string-append "/decks/" (col deck "id"))))
+                  ((not (can-edit? (col deck "role")))
+                   (redirect (string-append "/decks/" (col deck "id") "?m=read-only")))
                   (else (html-response (editor-page deck))))))))
+
+        ;; Sharing (the owner only): form fields username, role.
+        (route! "POST" "/decks/:id/shares"
+          (signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (form (http-request-form req))
+                     (other (find-user-by-name db (form-ref form "username" "")))
+                     (role (form-ref form "role" "view")))
+                (redirect
+                 (string-append
+                  "/decks/" id "?m="
+                  (cond ((not other) "no-user")
+                        ((not (member role '("view" "edit"))) "no-user")
+                        ((share-deck! db (col user "id") id (col other "id") role) "shared")
+                        (else "not-owner"))))))))
+
+        (route! "POST" "/decks/:id/shares/:uid/delete"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (unshare-deck! db (col user "id") id (params-ref params "uid"))
+                (redirect (string-append "/decks/" id "?m=unshared"))))))
 
         (route! "POST" "/decks/:id/rename"
           (signed-in
             (lambda (req params user)
               (let ((id (params-ref params "id"))
                     (title (form-ref (http-request-form req) "title" "")))
-                (if (valid-title? title)
-                    (begin (rename-deck! db (col user "id") id title)
-                           (redirect (string-append "/decks/" id "?m=renamed")))
-                    (redirect (string-append "/decks/" id "?m=bad-title")))))))
+                (cond
+                  ((not (valid-title? title)) (redirect (string-append "/decks/" id "?m=bad-title")))
+                  ((not (let ((a (deck-access db (col user "id") id))) (and a (can-edit? (cdr a)))))
+                   (redirect (string-append "/decks/" id "?m=read-only")))
+                  (else (rename-deck! db (col user "id") id title)
+                        (redirect (string-append "/decks/" id "?m=renamed"))))))))
 
         (route! "POST" "/decks/:id/duplicate"
           (signed-in
@@ -463,6 +506,8 @@ Description: Builds the app's request handler. settings is an alist:
                   ((not deck) (json-error 404 "no such deck"))
                   ((not (string=? (col deck "status") "active"))
                    (json-error 403 "deck is read-only"))
+                  ((not (can-edit? (col deck "role")))
+                   (json-error 403 "deck is shared for viewing only"))
                   ((not (and (list? body) (exact-integer? (jref body "revision"))))
                    (json-error 400 "expected {revision, design, doc}"))
                   (else
@@ -493,12 +538,13 @@ Description: Builds the app's request handler. settings is an alist:
           (api-signed-in
             (lambda (req params user)
               (let* ((id (params-ref params "id"))
-                     (status (deck-status db (col user "id") id))
+                     (access (deck-access db (col user "id") id))
                      (q (url-query-params (http-request-url req)))
                      (qref (lambda (k) (let ((p (assoc k q))) (and p (cdr p))))))
                 (cond
-                  ((not status) (json-error 404 "no such deck"))
-                  ((not (string=? status "active")) (json-error 403 "deck is read-only"))
+                  ((not access) (json-error 404 "no such deck"))
+                  ((not (and (string=? (car access) "active") (can-edit? (cdr access))))
+                   (json-error 403 "deck is read-only"))
                   (else
                    (let ((r (store-upload! db data-dir id req (clean-name (qref "name"))
                                            (qref "w") (qref "h"))))

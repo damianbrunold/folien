@@ -219,17 +219,19 @@ Description: Stores the body of req as an asset of the deck (whose owner
         deck-id sha))
 
     (define (deck-asset db owner-id deck-id sha)
-      "Syntax: (deck-asset db owner-id deck-id sha)
+      "Syntax: (deck-asset db user-id deck-id sha)
 Library: (app assets)
-Description: The asset row if sha is an asset of the owner's deck, else
-  #f."
+Description: The asset row if sha is an asset of a deck the user may
+  see (owner or shared), else #f."
       (and (valid-sha? sha)
            (db-row db
              (string-append "SELECT " asset-columns " FROM presentation_assets pa "
                             "JOIN assets a ON a.sha256 = pa.sha256 "
                             "JOIN presentations p ON p.id = pa.presentation_id "
                             "WHERE pa.presentation_id = $1 AND pa.sha256 = $2 "
-                            "AND p.owner_id = $3")
+                            "AND (p.owner_id = $3 OR (p.status <> 'trashed' AND EXISTS "
+                            "(SELECT 1 FROM presentation_shares s "
+                            "WHERE s.presentation_id = $1 AND s.user_id = $3)))")
              deck-id sha (let ((x owner-id)) (if (string? x) (string->number x) x)))))
 
     (define (list-deck-assets db deck-id)

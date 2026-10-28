@@ -2,10 +2,13 @@
 ;; id (uuid text), owner_id, title, design, status (active / archived /
 ;; trashed), doc (jsonb), revision.
 ;;
-;; Every function takes the owner's id and only touches that owner's decks,
-;; so a handler cannot reach someone else's deck by guessing an id. Archived
-;; and trashed decks are read-only: save-doc! and rename-deck! only change
-;; active ones.
+;; Every function takes the acting user's id and only touches decks that
+;; user may: the owner's own, or those shared with them (presentation_shares:
+;; view or edit), so a handler cannot reach someone else's deck by guessing
+;; an id. Changing a deck's content needs the owner or an edit share;
+;; archiving, trashing, deleting and sharing need the owner. Archived and
+;; trashed decks are read-only; a shared deck in the trash is hidden from
+;; those it is shared with.
 
 (define-library (app decks)
   (import (scheme base)
@@ -15,8 +18,14 @@
           (app users)             ; col
           (app model))
   (export list-decks
+          list-shared-decks
           load-deck
           deck-status
+          deck-access
+          can-edit?
+          list-shares
+          share-deck!
+          unshare-deck!
           deck-doc
           create-deck!
           create-deck-with-doc!
@@ -51,23 +60,101 @@ Description: The owner's decks with status (\"active\", \"archived\",
                        "ORDER BY updated_at DESC")
         (->int owner-id) status))
 
-    (define (load-deck db owner-id id)
-      "Syntax: (load-deck db owner-id id)
-Library: (app decks)
-Description: The owner's deck row with id, including doc (as JSON text),
-  or #f."
-      (db-row db
-        (string-append "SELECT " summary-columns ", doc::text AS doc FROM presentations "
-                       "WHERE id = $1 AND owner_id = $2")
-        id (->int owner-id)))
+    ;; The decks a user may see, with their role: owner, edit or view.
+    (define access-from
+      (string-append
+       "FROM presentations p JOIN users u ON u.id = p.owner_id "
+       "LEFT JOIN presentation_shares s ON s.presentation_id = p.id AND s.user_id = $2 "))
 
-    (define (deck-status db owner-id id)
-      "Syntax: (deck-status db owner-id id)
+    (define access-where
+      "(p.owner_id = $2 OR (s.user_id IS NOT NULL AND p.status <> 'trashed'))")
+
+    (define access-role
+      "CASE WHEN p.owner_id = $2 THEN 'owner' ELSE s.role END AS role")
+
+    (define (load-deck db user-id id)
+      "Syntax: (load-deck db user-id id)
 Library: (app decks)
-Description: The status of the owner's deck with id (\"active\",
-  \"archived\", \"trashed\"), or #f if the owner has no such deck."
-      (db-scalar db "SELECT status FROM presentations WHERE id = $1 AND owner_id = $2"
-                 id (->int owner-id)))
+Description: The deck row with id, including doc (as JSON text), role
+  (\"owner\", \"edit\" or \"view\") and owner_name, if the user may see
+  it; else #f."
+      (db-row db
+        (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.created_at, "
+                       "p.updated_at, p.status_at, p.doc::text AS doc, u.username AS owner_name, "
+                       access-role " " access-from
+                       "WHERE p.id = $1 AND " access-where)
+        id (->int user-id)))
+
+    (define (deck-access db user-id id)
+      "Syntax: (deck-access db user-id id)
+Library: (app decks)
+Description: (status . role) of the deck with id for the user, or #f if
+  the user may not see it."
+      (let ((row (db-row db
+                   (string-append "SELECT p.status, " access-role " " access-from
+                                  "WHERE p.id = $1 AND " access-where)
+                   id (->int user-id))))
+        (and row (cons (col row "status") (col row "role")))))
+
+    (define (deck-status db user-id id)
+      "Syntax: (deck-status db user-id id)
+Library: (app decks)
+Description: The status of the deck with id if the user may see it
+  (\"active\", \"archived\", \"trashed\"), else #f."
+      (let ((a (deck-access db user-id id)))
+        (and a (car a))))
+
+    (define (can-edit? role)
+      "Syntax: (can-edit? role)
+Library: (app decks)
+Description: True for the owner and edit shares."
+      (and (member role '("owner" "edit")) #t))
+
+    (define (list-shared-decks db user-id)
+      "Syntax: (list-shared-decks db user-id)
+Library: (app decks)
+Description: The active and archived decks shared with the user, most
+  recently changed first, with role and owner_name."
+      (db-rows db
+        (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.updated_at, "
+                       "p.status_at, s.role, u.username AS owner_name "
+                       "FROM presentation_shares s JOIN presentations p ON p.id = s.presentation_id "
+                       "JOIN users u ON u.id = p.owner_id "
+                       "WHERE s.user_id = $1 AND p.status <> 'trashed' ORDER BY p.updated_at DESC")
+        (->int user-id)))
+
+    (define (list-shares db deck-id)
+      "Syntax: (list-shares db deck-id)
+Library: (app decks)
+Description: Who the deck is shared with: user_id, username, role."
+      (db-rows db
+        (string-append "SELECT s.user_id, u.username, s.role FROM presentation_shares s "
+                       "JOIN users u ON u.id = s.user_id WHERE s.presentation_id = $1 "
+                       "ORDER BY u.username")
+        deck-id))
+
+    (define (share-deck! db owner-id deck-id user-id role)
+      "Syntax: (share-deck! db owner-id deck-id user-id role)
+Library: (app decks)
+Description: Shares the owner's deck with user-id as role (\"view\" or
+  \"edit\"), or changes the role. Returns #f if owner-id does not own the
+  deck or would share with themselves."
+      (and (not (equal? (->int owner-id) (->int user-id)))
+           (db-scalar db "SELECT 1 FROM presentations WHERE id = $1 AND owner_id = $2"
+                      deck-id (->int owner-id))
+           (begin
+             (db-exec db
+               (string-append "INSERT INTO presentation_shares (presentation_id, user_id, role) "
+                              "VALUES ($1, $2, $3) ON CONFLICT (presentation_id, user_id) "
+                              "DO UPDATE SET role = EXCLUDED.role")
+               deck-id (->int user-id) role)
+             #t)))
+
+    (define (unshare-deck! db owner-id deck-id user-id)
+      (db-exec db
+        (string-append "DELETE FROM presentation_shares WHERE presentation_id = $1 AND user_id = $2 "
+                       "AND EXISTS (SELECT 1 FROM presentations WHERE id = $1 AND owner_id = $3)")
+        deck-id (->int user-id) (->int owner-id)))
 
     (define (deck-doc deck)
       "Syntax: (deck-doc deck)
@@ -103,23 +190,27 @@ Description: Creates an active deck with doc (already validated) and
       "Syntax: (save-doc! db owner-id id base-revision doc design-id [title])
 Library: (app decks)
 Description: Stores doc (already validated), design and, if given, title
-  (already validated) for the owner's active deck if its revision is
-  still base-revision. Returns the new revision, or #f when the deck
+  (already validated) for an active deck the user owns or may edit, if
+  its revision is still base-revision. Returns the new revision, or #f when the deck
   changed in the meantime, is not active, or does not exist."
       (db-scalar db
         (string-append "UPDATE presentations "
                        "SET doc = $1::jsonb, design = $2, revision = revision + 1, "
                        "title = COALESCE($6, title), updated_at = now() "
-                       "WHERE id = $3 AND owner_id = $4 AND revision = $5 "
-                       "AND status = 'active' RETURNING revision")
+                       "WHERE id = $3 AND revision = $5 AND status = 'active' "
+                       "AND (owner_id = $4 OR EXISTS (SELECT 1 FROM presentation_shares "
+                       "WHERE presentation_id = $3 AND user_id = $4 AND role = 'edit')) "
+                       "RETURNING revision")
         (json->string doc) design-id id (->int owner-id) (->int base-revision)
         (if (pair? title) (car title) 'null)))
 
-    (define (rename-deck! db owner-id id title)
+    (define (rename-deck! db user-id id title)
       (db-exec db
         (string-append "UPDATE presentations SET title = $1, updated_at = now() "
-                       "WHERE id = $2 AND owner_id = $3 AND status = 'active'")
-        title id (->int owner-id)))
+                       "WHERE id = $2 AND status = 'active' "
+                       "AND (owner_id = $3 OR EXISTS (SELECT 1 FROM presentation_shares "
+                       "WHERE presentation_id = $2 AND user_id = $3 AND role = 'edit'))")
+        title id (->int user-id)))
 
     (define (set-deck-status! db owner-id id status)
       "Syntax: (set-deck-status! db owner-id id status)
@@ -135,17 +226,17 @@ Description: Moves the owner's deck to status (\"active\", \"archived\" or
     (define (duplicate-deck! db owner-id id title)
       "Syntax: (duplicate-deck! db owner-id id title)
 Library: (app decks)
-Description: Copies the owner's deck, with the links to its assets, as a
-  new active deck named title and returns the new id, or #f if there is
-  no such deck."
+Description: Copies a deck the user may see, with the links to its
+  assets, as a new active deck of the user's named title and returns the
+  new id, or #f if there is no such deck."
       (let ((new-id (uuidgen)))
         (with-db-transaction db
           (lambda (tx)
             (and (db-scalar tx
                    (string-append
                     "INSERT INTO presentations (id, owner_id, title, design, doc) "
-                    "SELECT $1, owner_id, $2, design, doc FROM presentations "
-                    "WHERE id = $3 AND owner_id = $4 RETURNING id")
+                    "SELECT $1, $4, $2, p.design, p.doc " access-from-dup
+                    "WHERE p.id = $3 AND " access-where-dup " RETURNING id")
                    new-id title id (->int owner-id))
                  ;; The copy may use the same images and videos.
                  (begin
@@ -156,6 +247,14 @@ Description: Copies the owner's deck, with the links to its assets, as a
                       "WHERE presentation_id = $2")
                      new-id id)
                    new-id))))))
+
+    ;; access-from / access-where with the user as $4 (duplicate-deck!)
+    (define access-from-dup
+      (string-append
+       "FROM presentations p "
+       "LEFT JOIN presentation_shares s ON s.presentation_id = p.id AND s.user_id = $4 "))
+    (define access-where-dup
+      "(p.owner_id = $4 OR (s.user_id IS NOT NULL AND p.status <> 'trashed'))")
 
     (define (delete-deck! db owner-id id)
       "Syntax: (delete-deck! db owner-id id)

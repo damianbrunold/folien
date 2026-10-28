@@ -43,6 +43,7 @@
                ;; signing out lives. Admins also get the console.
                ,@(if who
                      `((a (@ (href ,(url "/"))) "Präsentationen")
+                       (a (@ (href ,(url "/shared"))) "Geteilt")
                        (a (@ (href ,(url "/archive"))) "Archiv")
                        (a (@ (href ,(url "/trash"))) "Papierkorb")
                        ,@(if (cadr who) `((a (@ (href ,(url "/admin"))) "Verwaltung")) '())
@@ -103,8 +104,24 @@
                     (class ,(if (pair? classes) (car classes) "small")))
                  ,label)))
 
-    (define (deck-actions status id)
+    (define (zip-link id)
+      `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
+             (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
+          "ZIP"))
+
+    ;; The actions on a deck for the user's role (owner, edit, view).
+    (define (deck-actions status id . role)
+      (define r (if (pair? role) (car role) "owner"))
       (cond
+        ((not (string=? r "owner"))
+         (append
+          (if (and (string=? r "edit") (string=? status "active"))
+              (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/edit"))))
+                        "Bearbeiten"))
+              '())
+          (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
+                (action-button id "/duplicate" "Kopie für mich")
+                (zip-link id))))
         ((string=? status "active")
          (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/edit"))))
                   "Bearbeiten")
@@ -127,31 +144,44 @@
          (list (action-button id "/restore" "Wiederherstellen")
                (action-button id "/delete" "Endgültig löschen" "small danger")))))
 
+    (define (role-label role)
+      (cond ((equal? role "edit") "darf bearbeiten")
+            ((equal? role "view") "darf ansehen")
+            (else "")))
+
     (define (deck-row deck)
-      (let ((id (col deck "id"))
-            (status (col deck "status")))
+      (let* ((id (col deck "id"))
+             (status (col deck "status"))
+             (role (let ((p (assoc "role" deck))) (if p (cdr p) "owner")))
+             (editable? (and (string=? status "active") (member role '("owner" "edit")))))
         `(tr
           (td ,(if (string=? status "trashed")
                    (col deck "title")
-                   `(a (@ (href ,(url (string-append "/decks/" id
-                                                     (if (string=? status "active") "/edit" "")))))
+                   `(a (@ (href ,(url (string-append "/decks/" id (if editable? "/edit" "")))))
                        ,(col deck "title"))))
+          ,@(if (string=? role "owner")
+                '()
+                `((td ,(col deck "owner_name"))
+                  (td (@ (class "muted")) ,(role-label role))))
           (td ,(design-name (col deck "design")))
           (td (@ (class "nowrap"))
-              ,(format-time (if (string=? status "active")
+              ,(format-time (if (member status '("active" "shared"))
                                 (col deck "updated_at")
                                 (col deck "status_at"))))
-          (td (div (@ (class "actions")) ,@(deck-actions status id))))))
+          (td (div (@ (class "actions")) ,@(deck-actions status id role))))))
 
     (define (deck-table decks status)
       (if (null? decks)
           `(p (@ (class "muted"))
               ,(cond ((string=? status "active") "Noch keine Präsentationen.")
                      ((string=? status "archived") "Das Archiv ist leer.")
+                     ((string=? status "shared") "Niemand hat Ihnen eine Präsentation freigegeben.")
                      (else "Der Papierkorb ist leer.")))
           `(table (@ (class "data"))
-             (thead (tr (th "Titel") (th "Design")
-                        (th ,(cond ((string=? status "active") "Geändert")
+             (thead (tr (th "Titel")
+                        ,@(if (string=? status "shared") '((th "Von") (th "Recht")) '())
+                        (th "Design")
+                        (th ,(cond ((member status '("active" "shared")) "Geändert")
                                    ((string=? status "archived") "Archiviert")
                                    (else "Gelöscht")))
                         (th "")))
@@ -167,10 +197,11 @@
                   designs))
          (button (@ (type "submit") (class "primary")) "Erstellen")))
 
-    ;; status: "active", "archived" or "trashed".
+    ;; status: "active", "archived", "trashed" or "shared" (with me).
     (define (decks-page who status decks msg)
       (let ((title (cond ((string=? status "active") "Präsentationen")
                          ((string=? status "archived") "Archiv")
+                         ((string=? status "shared") "Mit mir geteilt")
                          (else "Papierkorb"))))
         (page-with-script title who (and (string=? status "active") "js/import.js")
           `(section
@@ -204,10 +235,38 @@
     ;; The deck's facts, actions and rename form; below them the viewer
     ;; (static/js/viewer.js), which loads the deck from the JSON API.
 
-    (define (deck-page who deck slide-count msg)
+    (define (shares-card id shares)
+      `(section (@ (class "card spaced-card"))
+         (h3 "Freigeben")
+         ,(if (null? shares)
+              '(p (@ (class "muted")) "Diese Präsentation ist niemandem freigegeben.")
+              `(table (@ (class "data"))
+                 (tbody
+                  ,@(map (lambda (sh)
+                           `(tr (td ,(col sh "username"))
+                                (td (@ (class "muted")) ,(role-label (col sh "role")))
+                                (td (form (@ (method "post")
+                                             (action ,(url (string-append "/decks/" id "/shares/"
+                                                                          (id->string (col sh "user_id"))
+                                                                          "/delete")))
+                                             (class "inline"))
+                                      (button (@ (type "submit") (class "small")) "Entfernen")))))
+                         shares))))
+         (form (@ (method "post") (action ,(url (string-append "/decks/" id "/shares")))
+                  (class "row-form"))
+           (input (@ (name "username") (placeholder "Benutzername") (aria-label "Benutzername")
+                     (required #t)))
+           (select (@ (name "role") (aria-label "Recht"))
+             (option (@ (value "view")) "darf ansehen")
+             (option (@ (value "edit")) "darf bearbeiten"))
+           (button (@ (type "submit")) "Freigeben"))))
+
+    (define (deck-page who deck slide-count msg shares)
       (let* ((id (col deck "id"))
              (status (col deck "status"))
-             (active? (string=? status "active")))
+             (role (col deck "role"))
+             (owner? (string=? role "owner"))
+             (active? (and (string=? status "active") (member role '("owner" "edit")) #t)))
         (page (col deck "title") who
           `(section
              (div (@ (class "deck-head"))
@@ -219,7 +278,11 @@
                     " · Revision " ,(id->string (col deck "revision"))
                     ,(cond ((string=? status "archived") " · archiviert (schreibgeschützt)")
                            ((string=? status "trashed") " · im Papierkorb")
-                           (else ""))))
+                           (else ""))
+                    ,(if owner?
+                         ""
+                         (string-append " · von " (col deck "owner_name") ", Sie dürfen "
+                                        (if (equal? role "edit") "bearbeiten" "ansehen")))))
                (div (@ (class "actions"))
                  (a (@ (class "button small primary-link")
                        (href ,(url (string-append "/decks/" id "/present"))))
@@ -228,7 +291,7 @@
                     "Referentenansicht")
                  (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/remote"))))
                     "Fernbedienung")
-                 ,@(deck-actions status id)))
+                 ,@(deck-actions status id role)))
              ,(notice msg)
              (div (@ (id "viewer") (class "viewer")
                      (data-deck-url ,(url (string-append "/api/decks/" id)))
@@ -266,7 +329,8 @@
                      (input (@ (name "title") (value ,(col deck "title")) (aria-label "Titel")
                                (maxlength "200") (required #t)))
                      (button (@ (type "submit")) "Umbenennen"))
-                  ""))
+                  "")
+             ,(if (and owner? (not (string=? status "trashed"))) (shares-card id shares) ""))
           `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
           `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
 
