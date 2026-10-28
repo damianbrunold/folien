@@ -24,7 +24,8 @@ Implemented step by step, phase by phase:
       placeholders, poster frames, media library, byte-range streaming
 - [x] Phase 5 — presenting: transitions, builds, black/white screen,
       presenter console with notes, next preview and timer, phone remote
-- [ ] Phase 6 — PDF export (slides, notes, handouts)
+- [x] Phase 6 — PDF export: slides (960 × 540 pt) or A4 handouts with 2 or 4
+      per page, each with or without notes; builds final or step by step
 - [ ] Phase 7 — zip bundle export/import
 - [ ] Phase 8 — PPTX export
 - [ ] Phase 9 — sharing, snapshots, packaging
@@ -47,6 +48,7 @@ src/app-designs.sld   the designs: colour and font tokens, layouts
 src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-assets.sld    uploaded images and videos (content-addressed files)
+src/app-export-pdf.sld  the deck as PDF, natively with (scm pdf)
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
 static/js/render.js   draws slides (viewer, editor, later player and exports)
@@ -88,7 +90,20 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.3.3 or later.
+Needs dabscm 2.4.0 or later.
+
+## PDF export
+
+`GET /decks/<id>/export.pdf?per-page=1|2|4&notes=0|1&builds=final|steps`
+(the form on the deck page). The PDF is drawn natively with `(scm pdf)`
+from the same document model the browser renders: Inter with the same
+OpenType features, written as TrueType by `(scm truetype)` and embedded
+(subset), kerned; text broken into lines by `(scm text layout)` with the
+browser's rules, so line breaks match the screen; real, selectable text
+with clickable web links. Images are embedded once each (PNG, JPEG, SVG
+rasterized), videos show their poster frame, hidden slides are left out.
+`FOLIEN_PDF_OUT=/tmp/x.pdf scm tests/test_pure_export.scm` writes a test
+deck to look at.
 
 ## Presenting
 

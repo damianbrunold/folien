@@ -253,3 +253,12 @@ button.small.danger:hover { color: var(--on-accent); background: var(--danger); 
 .deck-head p { margin: 0; }
 .row-form.spaced { margin-top: 1.5rem; max-width: 40rem; }
 a.button.primary-link { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.spaced-card { margin-top: 1.5rem; }
+.row-form label.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: normal;
+}
+.row-form label.inline-field select { margin: 0; }

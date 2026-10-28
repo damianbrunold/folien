@@ -213,6 +213,24 @@
                      (data-deck-url ,(url (string-append "/api/decks/" id)))
                      (data-designs-url ,(url "/api/designs")))
                (noscript "Zum Anzeigen der Folien wird JavaScript benötigt."))
+             (section (@ (id "export") (class "card spaced-card"))
+               (h3 "Als PDF exportieren")
+               (form (@ (method "get") (action ,(url (string-append "/decks/" id "/export.pdf")))
+                        (class "row-form"))
+                 (label (@ (class "inline-field")) "Folien pro Seite"
+                   (select (@ (name "per-page"))
+                     (option (@ (value "1")) "1")
+                     (option (@ (value "2")) "2")
+                     (option (@ (value "4")) "4")))
+                 (label (@ (class "inline-field")) "Notizen"
+                   (select (@ (name "notes"))
+                     (option (@ (value "0")) "ohne")
+                     (option (@ (value "1")) "mit")))
+                 (label (@ (class "inline-field")) "Aufbau"
+                   (select (@ (name "builds"))
+                     (option (@ (value "final")) "fertige Folien")
+                     (option (@ (value "steps")) "jeder Schritt eine Seite")))
+                 (button (@ (type "submit") (class "primary")) "PDF herunterladen")))
              ,(if active?
                   `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/rename")))
                             (class "row-form spaced"))

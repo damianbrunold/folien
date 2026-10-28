@@ -18,6 +18,7 @@
           (srfi 18)
           (scm crypto password)
           (scm json simple)
+          (scm uri)
           (scm net http request)
           (scm net http response)
           (scm net http route)
@@ -34,6 +35,7 @@
           (app decks)
           (app assets)
           (app remote)
+          (app export-pdf)
           (app views))
   (export make-app admin-role)
   (begin
@@ -150,7 +152,41 @@
                      "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
                      "base-uri 'none'; object-src 'none'"))
 
-;; --- presenting -----------------------------------------------------
+;; --- export -----------------------------------------------------------
+
+    ;; attachment; filename="<ascii fallback>"; filename*=UTF-8''<encoded>
+    (define (download-disposition name)
+      (string-append
+       "attachment; filename=\""
+       (string-map (lambda (c)
+                     (if (and (char<=? #\space c #\~) (not (memv c '(#\" #\\ #\/))))
+                         c
+                         #\_))
+                   name)
+       "\"; filename*=UTF-8''" (percent-encode name)))
+
+    ;; Options of a PDF export from the query string; #f if invalid.
+    (define (pdf-options q)
+      (let* ((get (lambda (k d) (let ((p (assoc k q))) (if p (cdr p) d))))
+             (per-page (string->number (get "per-page" "1")))
+             (notes (get "notes" "0"))
+             (builds (get "builds" "final")))
+        (and (memv per-page '(1 2 4))
+             (member notes '("0" "1"))
+             (member builds '("final" "steps"))
+             `((per-page . ,per-page)
+               (notes . ,(string=? notes "1"))
+               (builds . ,(string->symbol builds))))))
+
+    (define (pdf-file-name title opts)
+      (string-append
+       title
+       (if (cdr (assq 'notes opts)) " (Notizen)" "")
+       (let ((n (cdr (assq 'per-page opts))))
+         (if (= n 1) "" (string-append " (" (number->string n) " pro Seite)")))
+       ".pdf"))
+
+    ;; --- presenting -----------------------------------------------------
 
     ;; Messages between presenting windows, rebuilt from the fields that
     ;; are known so nothing else passes through: {"type": "state" | "goto"
@@ -459,6 +495,26 @@ Description: Builds the app's request handler. settings is an alist:
                              (http-response-headers r)))))))))
 
 ;; --- presenting ---
+
+        ;; The deck as PDF; query: per-page (1, 2, 4), notes (0, 1),
+        ;; builds (final, steps).
+        (route! "GET" "/decks/:id/export.pdf"
+          (signed-in
+            (lambda (req params user)
+              (let ((deck (load-deck db (col user "id") (params-ref params "id")))
+                    (opts (pdf-options (url-query-params (http-request-url req)))))
+                (cond
+                  ((not deck) (http-not-found))
+                  ((not opts) (http-bad-request "Ungültige Exportoptionen"))
+                  (else
+                   (make-http-response
+                    200
+                    `(("Content-Type" . "application/pdf")
+                      ("Content-Disposition"
+                       . ,(download-disposition (pdf-file-name (col deck "title") opts)))
+                      ("Cache-Control" . "no-store"))
+                    (deck->pdf (deck-doc deck) (col deck "design") (col deck "title")
+                               data-dir opts))))))))
 
         (route! "GET" "/decks/:id/present" (deck-app-page present-page))
         (route! "GET" "/decks/:id/presenter" (deck-app-page presenter-page))

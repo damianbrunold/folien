@@ -294,7 +294,17 @@
               (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 5) ("doc" . ,doc))))))
             (test-assert (file-exists? (string-append data-dir "/assets/" (substring sha 0 2) "/" sha))))
 
-;; Presenting: the pages, and messages through the event stream.
+;; PDF export.
+          (let ((r (send "GET" (string-append "/decks/" id "/export.pdf?per-page=2&notes=1") carol)))
+            (test-equal 200 (status r))
+            (test-equal "application/pdf" (http-response-header r "Content-Type"))
+            (test-assert (has? (http-response-header r "Content-Disposition") "(Notizen) (2 pro Seite).pdf"))
+            (test-equal "%PDF" (utf8->string (bytevector-copy (http-response-body r) 0 4))))
+          (test-equal 400 (status (send "GET" (string-append "/decks/" id "/export.pdf?per-page=3") carol)))
+          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/export.pdf") dave)))
+          (test-assert (has? (body (send "GET" (string-append "/decks/" id) carol)) "export.pdf"))
+
+          ;; Presenting: the pages, and messages through the event stream.
           (for-each
            (lambda (page)
              (let ((r (send "GET" (string-append "/decks/" id "/" page) carol)))

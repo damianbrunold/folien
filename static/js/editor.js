@@ -378,6 +378,7 @@ function buildSkeleton() {
     ui.uploadStatus,
     h("span", { class: "spacer" }),
     h("a", { class: "button small", href: urls.viewUrl, text: "Ansehen" }),
+    h("a", { class: "button small", href: urls.viewUrl + "#export", text: "PDF" }),
     h("button", {
       type: "button",
       class: "small",

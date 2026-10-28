@@ -2,10 +2,11 @@
 // them to POST <deck api>/assets.
 //
 // Images end up as PNG or JPEG (what the PDF export can embed) of at most
-// MAX_SIDE pixels: PNG and JPEG files within that size go up unchanged,
-// anything else (WebP, GIF, BMP, larger images) is redrawn on a canvas,
-// as JPEG when it is opaque and PNG when it has transparency. SVG stays
-// SVG. Videos go up as they are, with a poster frame (JPEG) taken from
+// MAX_SIDE pixels: JPEG files within that size go up unchanged; PNGs are
+// redrawn on a canvas, which gives the 8-bit RGBA PNG the PDF export
+// takes (a PNG may be paletted or 16-bit); anything else (WebP, GIF,
+// BMP) is redrawn as JPEG when it is opaque and PNG when it has
+// transparency. SVG stays SVG. Videos go up as they are, with a poster frame (JPEG) taken from
 // the first second, which is what PDF and thumbnails show.
 
 export const MAX_SIDE = 3840;
@@ -69,7 +70,7 @@ export async function prepareImage(file) {
   const w = bmp.width;
   const h = bmp.height;
   const fits = Math.max(w, h) <= MAX_SIDE;
-  if (fits && (file.type === "image/png" || file.type === "image/jpeg")) {
+  if (fits && file.type === "image/jpeg") {
     bmp.close();
     return { blob: file, name, width: w, height: h };
   }
@@ -82,7 +83,7 @@ export async function prepareImage(file) {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(bmp, 0, 0, cw, ch);
   bmp.close();
-  const png = file.type !== "image/jpeg" && hasTransparency(ctx, cw, ch);
+  const png = file.type === "image/png" || (file.type !== "image/jpeg" && hasTransparency(ctx, cw, ch));
   const blob = png ? await canvasBlob(canvas, "image/png") : await canvasBlob(canvas, "image/jpeg", 0.9);
   return { blob, name: withExtension(name, png ? ".png" : ".jpg"), width: cw, height: ch };
 }
