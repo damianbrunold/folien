@@ -57,7 +57,9 @@
       (and (string? s) (<= 1 (string-length s) 200)))
 
     (define summary-columns
-      "id, title, design, status, revision, created_at, updated_at, status_at, tags::text AS tags, is_template")
+      (string-append
+       "id, title, design, status, revision, created_at, updated_at, status_at, tags::text AS tags, is_template, "
+       "(doc->'slides'->0)::text AS first_slide"))
 
     ;; --- search ---------------------------------------------------------
 
@@ -158,7 +160,8 @@ Description: The active and archived decks shared with the user, most
             (tag (if (and (pair? filters) (pair? (cdr filters))) (cadr filters) "")))
         (db-rows db
           (string-append "SELECT p.id, p.title, p.design, p.status, p.revision, p.updated_at, "
-                         "p.status_at, p.tags::text AS tags, p.is_template, s.role, u.username AS owner_name "
+                         "p.status_at, p.tags::text AS tags, p.is_template, s.role, u.username AS owner_name, "
+                         "(p.doc->'slides'->0)::text AS first_slide "
                          "FROM presentation_shares s JOIN presentations p ON p.id = s.presentation_id "
                          "JOIN users u ON u.id = p.owner_id "
                          "WHERE s.user_id = $1 AND p.status <> 'trashed'" (filter-sql "2" "3")

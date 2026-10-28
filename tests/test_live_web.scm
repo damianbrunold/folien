@@ -195,6 +195,15 @@
              (api (string-append "/api/decks/" id)))
         (test-equal 303 (status created))
         (test-assert (has? (body (send "GET" "/" carol)) "Jahresbericht"))
+        ;; The list shows cards: the first slide for the picture, the main
+        ;; action, the others in a menu.
+        (let ((list-page (body (send "GET" "/" carol))))
+          (test-assert (has? list-page "class=\"deck-grid\""))
+          (test-assert "the first slide for the picture" (has? list-page "data-slide=\"{"))
+          (test-assert (has? list-page (string-append "href=\"/decks/" id "/edit\"")))
+          (test-assert (has? list-page "<details class=\"menu\">"))
+          (test-assert (has? list-page (string-append "action=\"/decks/" id "/archive\"")))
+          (test-assert (has? list-page "js/decks.js")))
         (test-assert (has? (body (send "GET" (string-append "/decks/" id) carol)) "Kanton Zürich"))
         (test-equal "/?m=bad-title" (location (send "POST" "/decks" carol "title=&design=zh")))
         (test-equal "/?m=bad-design" (location (send "POST" "/decks" carol "title=x&design=nope")))
