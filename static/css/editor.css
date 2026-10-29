@@ -76,6 +76,7 @@ body.editor-body { overflow: hidden; }
 .tb.b { font-weight: 900; }
 .tb.i { font-style: italic; }
 .tb.u { text-decoration: underline; }
+.tb.code { font-family: Consolas, "DejaVu Sans Mono", monospace; font-size: 0.85em; }
 .tb-select, .ed-panel select, .color-field select {
   height: 2rem;
   padding: 0 0.3rem;

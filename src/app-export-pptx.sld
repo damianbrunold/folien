@@ -13,7 +13,8 @@
 ;; The text is set in the design's family (Inter or Roboto Slab), headings
 ;; and bold runs bold (Inter's bold where the web shows Inter Black):
 ;; PowerPoint shows it as designed where the font is installed, otherwise
-;; it substitutes a similar font, and line breaks may then differ.
+;; it substitutes a similar font, and line breaks may then differ. Runs
+;; marked as code name the design's code font (JetBrains Mono).
 
 (define-library (app export-pptx)
   (import (scheme base)
@@ -102,6 +103,8 @@
              (base-black? (heading-font? design (jr base "font")))
              (base-color (hex design (or (jr base "color") "text")))
              (family (family-of design))
+             (code-family (let ((c (jr (design-ref design "fonts") "code")))
+                            (if c (jr c "family") (car family))))
              (base-align (string->symbol (or (jr base "align") "left")))
              (paras (vector->list (jr text "paragraphs" #())))
              (n (length paras)))
@@ -135,7 +138,7 @@
                                               (link (jr r "link")))
                                           `((text . ,(jr r "text"))
                                             (size . ,(pt (or (jr r "size") base-size)))
-                                            (font . ,(car family))
+                                            (font . ,(if (eq? (jr r "code") #t) code-family (car family)))
                                             (bold . ,black?)
                                             (italic . ,(eq? (jr r "i") #t))
                                             (underline . ,(or (eq? (jr r "u") #t) (and link #t)))

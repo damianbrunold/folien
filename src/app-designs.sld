@@ -12,6 +12,9 @@
 ;; and inherits geometry and text style from the slide's layout unless it
 ;; overrides them.
 ;;
+;; The font tokens: "heading" and "body" for the layouts' text, "code"
+;; for runs marked as code (the same monospaced family in every design).
+;;
 ;; "footer" places the deck's footer fields (see "footer" in (app model)):
 ;; a box and text style each for the date, the footer text and the slide
 ;; number, on every layout. A layout's "footerColor" recolours them where
@@ -89,9 +92,12 @@
         ("light"      . "#1e293b")
         ("on-accent"  . "#0f172a")))
 
+    (define code-font '("code" . (("family" . "JetBrains Mono") ("weight" . 400))))
+
     (define folien-fonts
-      '(("heading" . (("family" . "Inter") ("weight" . 900)))
-        ("body"    . (("family" . "Inter") ("weight" . 400)))))
+      `(("heading" . (("family" . "Inter") ("weight" . 900)))
+        ("body"    . (("family" . "Inter") ("weight" . 400)))
+        ,code-font))
 
     (define (folien-title-bar) (rect (box 120 236 160 10) "accent"))
 
@@ -161,8 +167,9 @@
         ("on-accent"  . "#ffffff")))
 
     (define zh-fonts
-      '(("heading" . (("family" . "Inter") ("weight" . 900)))
-        ("body"    . (("family" . "Inter") ("weight" . 400)))))
+      `(("heading" . (("family" . "Inter") ("weight" . 900)))
+        ("body"    . (("family" . "Inter") ("weight" . 400)))
+        ,code-font))
 
     ;; A slim blue band at the top carries the canton's colour on every
     ;; content slide.
@@ -245,8 +252,9 @@
         ("on-accent"  . "#15171c")))
 
     (define slab-fonts
-      '(("heading" . (("family" . "Roboto Slab") ("weight" . 700)))
-        ("body"    . (("family" . "Roboto Slab") ("weight" . 400)))))
+      `(("heading" . (("family" . "Roboto Slab") ("weight" . 700)))
+        ("body"    . (("family" . "Roboto Slab") ("weight" . 400)))
+        ,code-font))
 
     ;; The ruler at y, from the left margin across the slide.
     (define (slab-ruler y rule)

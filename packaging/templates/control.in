@@ -4,13 +4,14 @@ Architecture: all
 Maintainer: @MAINTAINER@
 Installed-Size: @INSTALLED_SIZE@
 Depends: default-jre-headless | java11-runtime-headless, curl, adduser, postgresql-client
-Recommends: postgresql
+Recommends: postgresql, dabscm-fonts
 Suggests: nginx
 Section: web
 Priority: optional
 Description: Folien (presentations: edit, present, export)
- Creates, edits and presents slide decks in the browser: layouts in two
- designs (Folien and Kanton Zürich), text, shapes, images and videos,
- transitions and builds, a presenter console and a phone remote; exports
- as PDF, PowerPoint and self-contained zip bundles. A dabscm web
- application with its own Scheme runtime; needs PostgreSQL.
+ Creates, edits and presents slide decks in the browser: layouts in five
+ designs (Folien, Kanton Zürich and Slab, some dark), text and code,
+ shapes, images and videos, transitions and builds, a presenter console
+ and a phone remote; exports as PDF, PowerPoint and self-contained zip
+ bundles. A dabscm web application with its own Scheme runtime; needs
+ PostgreSQL. With dabscm-fonts, PDFs set code in JetBrains Mono.

@@ -13,6 +13,9 @@
         (scm png)
         (scm zip)
         (scm image)
+        (scm truetype)
+        (scm fonts dejavu)
+        (only (scm fonts) font-search-path font-search-path!)
         (scm test))
 
 (define root
@@ -188,6 +191,53 @@
           (test-assert (has? s1 "typeface=\"Roboto Slab\""))
           (test-assert "no Inter" (not (has? s1 "typeface=\"Inter\""))))))
     (delete-file file)))
+
+(test-group "code"
+  ;; A "JetBrains Mono" of its own on the font path (DejaVu's glyphs), so
+  ;; the test needs no dabscm-fonts.
+  (let ((saved (font-search-path))
+        (dir (mktempdir '(prefix . "folien-fonts")))
+        (code-doc
+         `(("format" . 1)
+           ("slides"
+            . #((("id" . "c") ("layout" . "title-content")
+                 ("elements"
+                  . #((("id" . "b") ("type" . "text") ("placeholder" . "body")
+                       ("text" . ,(text (para '((("text" . "Aufruf: ")) (("text" . "(f x)") ("code" . #t))))
+                                        (para '((("text" . "fett") ("code" . #t) ("b" . #t)))))))))))))))
+    (for-each (lambda (style)
+                (let ((p (open-binary-output-file (string-append dir "/JetBrainsMono-" style ".ttf"))))
+                  (write-bytevector (font->truetype (if (equal? style "Bold") dejavu-sans-bold dejavu-sans)
+                                                    "JetBrains Mono" style)
+                                    p)
+                  (close-port p)))
+              '("Regular" "Bold"))
+    (font-search-path! (list dir))
+    (test-equal "the code deck is valid" #f (validate-doc code-doc "slab"))
+    (let ((s (text-of (deck->pdf code-doc "slab" "Code" data-dir '()))))
+      (test-assert "the code font embedded" (has? s "+JetBrainsMono-Regular"))
+      (test-assert "its bold" (has? s "+JetBrainsMono-Bold"))
+      (test-assert "the text font too" (has? s "+RobotoSlab-Regular")))
+    (test-assert "only when there is code"
+      (not (has? (text-of (deck->pdf doc "zh" "x" data-dir '())) "JetBrainsMono")))
+    (let ((file (string-append data-dir "/c.pptx")))
+      (let ((p (open-binary-output-file file)))
+        (write-bytevector (deck->pptx code-doc "slab" "Code" data-dir) p)
+        (close-port p))
+      (call-with-input-zip file
+        (lambda (z)
+          (let ((s1 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide1.xml"))))
+            (test-assert (has? s1 "typeface=\"JetBrains Mono\""))
+            (test-assert (has? s1 "typeface=\"Roboto Slab\"")))))
+      (delete-file file))
+    ;; without the font, code keeps the text's font
+    (font-search-path! '())
+    (let ((s (text-of (deck->pdf code-doc "slab" "Code" data-dir '()))))
+      (test-assert (has? s "/Count 1"))
+      (test-assert (not (has? s "JetBrainsMono"))))
+    (font-search-path! saved)
+    (for-each (lambda (f) (delete-file (string-append dir "/" f))) (directory-files dir))
+    (delete-directory dir)))
 
 (test-group "footer fields"
   (let* ((footed `(("footer" . (("text" . "Fusszeile") ("number" . #t) ("date" . "fixed")

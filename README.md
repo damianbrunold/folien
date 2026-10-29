@@ -77,8 +77,9 @@ static/js/editor.js   the editor; richtext-*.js its text editing, doc-ops.js
 static/js/present.js  presenting: player.js (transitions, builds), deck-nav.js,
                       presenter.js, remote.js, sync.js (windows in step)
 migrations/           NNNN_*.sql, applied in order at startup
-static/               CSS, fonts (Inter, SIL OFL; Roboto Slab, Apache 2.0),
-                      favicon; js/render.js draws slides (shared by viewer, editor, player), js/viewer.js
+static/               CSS, fonts (Inter, JetBrains Mono: SIL OFL; Roboto Slab:
+                      Apache 2.0), favicon; js/render.js draws slides (shared
+                      by viewer, editor, player), js/viewer.js
 tests/                test_pure_*.scm (no database), test_live_web.scm
 deploy/               systemd units, health probe, nginx example, install script
 ```
@@ -245,6 +246,17 @@ presentation template.
 and `(scm fonts roboto-slab)` for the PDF). Roboto Slab has no arrows and
 only some superscript digits: the browser draws those in a fallback font,
 the PDF as "?". Its ligatures are off on screen, as in the PDF.
+
+## Code
+
+Text can be marked as code (toolbar `</>`, Ctrl+E): it is set in the
+design's code font, JetBrains Mono (`static/fonts/JetBrainsMono-*`, SIL
+OFL), with the weight of its box (bold in headings) and without its code
+ligatures, so `->` stays two characters on screen as in the exports. The
+PDF export takes the font from dabscm's `(scm fonts)`, i.e. the
+`dabscm-fonts` package (`/usr/share/dabscm/fonts`, or unpacked into
+`~/.local/share/dabscm/fonts`); without it, code keeps the text's font
+in PDFs. PowerPoint names JetBrains Mono.
 
 ## Maintenance and backups
 

@@ -502,6 +502,7 @@ function buildToolbar() {
   ui.bold = tb("F", "Fett (Strg+B)", () => fmt().toggleMark("b"), "b");
   ui.italic = tb("K", "Kursiv (Strg+I)", () => fmt().toggleMark("i"), "i");
   ui.underline = tb("U", "Unterstrichen (Strg+U)", () => fmt().toggleMark("u"), "u");
+  ui.code = tb("</>", "Code (Strg+E)", () => fmt().toggleMark("code"), "code");
   ui.size = h("select", { class: "tb-select", "aria-label": "Schriftgrösse" });
   ui.size.addEventListener("change", () => fmt().setSize(parseInt(ui.size.value, 10)));
   ui.colorSlot = h("span", { class: "tb-color" });
@@ -535,7 +536,7 @@ function buildToolbar() {
       tb("╱", "Linie einfügen", insertLine),
       tb("▦", "Tabelle einfügen", insertTable),
     ),
-    group(ui.bold, ui.italic, ui.underline, ui.size, ui.colorSlot),
+    group(ui.bold, ui.italic, ui.underline, ui.code, ui.size, ui.colorSlot),
     group(...ui.alignBtns),
     group(ui.bullets, ui.numbers, ui.outdent, ui.indent, ui.link),
     group(ui.front, ui.back, ui.del),
@@ -654,7 +655,7 @@ function updateToolbar() {
   ui.redoBtn.disabled = !redoStack.length;
   const f = fmt();
   const textBtns = [
-    ui.bold, ui.italic, ui.underline, ui.size, ...ui.alignBtns,
+    ui.bold, ui.italic, ui.underline, ui.code, ui.size, ...ui.alignBtns,
     ui.bullets, ui.numbers, ui.outdent, ui.indent,
   ];
   for (const b of textBtns) b.disabled = !f.enabled;
@@ -664,6 +665,7 @@ function updateToolbar() {
     pressed(ui.bold, f.hasMark("b"));
     pressed(ui.italic, f.hasMark("i"));
     pressed(ui.underline, f.hasMark("u"));
+    pressed(ui.code, f.hasMark("code"));
     const align = f.paragraphProp("align") || "left";
     ui.alignBtns.forEach((b) => pressed(b, b.dataset.align === align));
     pressed(ui.bullets, f.paragraphProp("list") === "bullet");

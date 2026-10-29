@@ -33,6 +33,21 @@
   font-display: block;
   src: url("../fonts/RobotoSlab-Bold.woff2") format("woff2");
 }
+/* Runs marked as code, in every design. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../fonts/JetBrainsMono-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: block;
+  src: url("../fonts/JetBrainsMono-Bold.woff2") format("woff2");
+}
 
 .slide-frame {
   position: relative;
@@ -150,6 +165,13 @@
   border-radius: 0.5rem;
 }
 .viewer-notes p { margin: 0 0 0.4rem; }
+/* Code in notes (render.js renderNotes), in the viewer, the presenter
+   console and the remote. */
+.viewer-notes .code, .p-notes .code, .r-notes .code {
+  font-family: "JetBrains Mono", Consolas, "DejaVu Sans Mono", monospace;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: 0.92em;
+}
 .viewer-notes:empty { display: none; }
 .viewer-error { color: var(--danger); }
 

@@ -38,8 +38,19 @@ function fontOf(design, token) {
 }
 
 // Per family the OpenType features that differ from the slide's (Inter's,
-// in slides.css): the PDF export sets Roboto Slab without ligatures.
-const FAMILY_FEATURES = { "Roboto Slab": '"liga" 0' };
+// in slides.css): the PDF export sets Roboto Slab and JetBrains Mono
+// without ligatures (JetBrains Mono's code ligatures are contextual).
+const FAMILY_FEATURES = {
+  "Roboto Slab": '"liga" 0',
+  "JetBrains Mono": '"liga" 0, "calt" 0',
+};
+
+// A font's CSS font-family with the fallbacks of its kind.
+function fontFamilyCss(family) {
+  return family === "JetBrains Mono"
+    ? `"${family}", Consolas, "DejaVu Sans Mono", monospace`
+    : `"${family}", Arial, Helvetica, sans-serif`;
+}
 
 // Resolves when the design's fonts are loaded (bold runs included), so a
 // first paint has the right line breaks.
@@ -154,6 +165,12 @@ export function renderRichText(target, text, base, design, ctx) {
       if (run.b) node.style.fontWeight = "900";
       if (run.i) node.style.fontStyle = "italic";
       if (run.u) node.style.textDecoration = "underline";
+      if (run.code) {
+        const code = fontOf(design, "code");
+        node.style.fontFamily = fontFamilyCss(code.family);
+        node.style.fontFeatureSettings = FAMILY_FEATURES[code.family] || "normal";
+        // The weight stays the box's: code in a heading is bold, as in the PDF.
+      }
       if (run.color) node.style.color = cssColor(design, run.color);
       if (run.size) node.style.fontSize = run.size + "px";
       p.appendChild(node);
@@ -162,7 +179,7 @@ export function renderRichText(target, text, base, design, ctx) {
     if (!any) p.appendChild(document.createElement("br"));
     target.appendChild(p);
   }
-  target.style.fontFamily = `"${font.family}", Arial, Helvetica, sans-serif`;
+  target.style.fontFamily = fontFamilyCss(font.family);
   if (FAMILY_FEATURES[font.family]) target.style.fontFeatureSettings = FAMILY_FEATURES[font.family];
   target.style.fontWeight = String(font.weight);
   target.style.fontSize = base.size + "px";
@@ -509,6 +526,7 @@ export function renderNotes(target, notes) {
       if (run.b) s.style.fontWeight = "700";
       if (run.i) s.style.fontStyle = "italic";
       if (run.u) s.style.textDecoration = "underline";
+      if (run.code) s.className = "code";
       p.appendChild(s);
     }
     target.appendChild(p);

@@ -10,7 +10,7 @@
 // editor clones before an edit when it needs the old state. No DOM here,
 // so this module is tested with node (tests/js/).
 
-export const MARK_KEYS = ["b", "i", "u", "color", "size", "link"];
+export const MARK_KEYS = ["b", "i", "u", "code", "color", "size", "link"];
 const PARA_KEYS = ["align", "list", "level"];
 
 export function clone(x) {

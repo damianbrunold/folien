@@ -135,6 +135,36 @@ test("bold, new paragraphs and undo", async () => {
   assert.equal(runsOf(doc, 0, 1).length, 2);
 });
 
+test("code: Ctrl+E, the toolbar button, the code font", async () => {
+  const c = await centerOf(titleId());
+  await browser.click(c.x, c.y, 2);
+  await browser.waitFor("!!document.querySelector('.text-inner.editing')");
+  await browser.keys("a", [Keys.ctrl]);
+  await browser.keys("e", [Keys.ctrl]);
+  assert.equal(
+    await browser.eval(`document.querySelector('button[aria-label="Code (Strg+E)"]').getAttribute('aria-pressed')`),
+    "true",
+  );
+  await browser.keys(Keys.escape);
+  let doc = await saved();
+  assert.deepEqual(runsOf(doc, 0, 0)[0].runs.map((r) => r.code), [true]);
+  // on the stage (the slide list redraws its thumbnails later)
+  const family = await browser.eval(
+    `getComputedStyle(document.querySelector('.ed-stage .slide .text-inner .para span')).fontFamily`,
+  );
+  assert.match(family, /JetBrains Mono/);
+  assert.equal(await browser.eval(`document.fonts.check('900 40px "JetBrains Mono"')`), true);
+  await shot("03b-code");
+  // The toolbar button switches it off again.
+  await browser.click(c.x, c.y, 2);
+  await browser.waitFor("!!document.querySelector('.text-inner.editing')");
+  await browser.keys("a", [Keys.ctrl]);
+  await browser.eval(`document.querySelector('button[aria-label="Code (Strg+E)"]').click()`);
+  await browser.keys(Keys.escape);
+  doc = await saved();
+  assert.deepEqual(runsOf(doc, 0, 0)[0].runs.map((r) => r.code), [undefined]);
+});
+
 test("insert, move, resize and delete a shape", async () => {
   await browser.eval(`(() => {
     const s = document.querySelector('select[aria-label="Form einfügen"]');

@@ -23,7 +23,8 @@
 ;;
 ;;   rich text: {"paragraphs": [{"align"?, "list"?, "level"?,
 ;;                               "runs": [{"text", "b"?, "i"?, "u"?,
-;;                                         "color"?, "size"?, "link"?}]}]}
+;;                                         "code"?, "color"?, "size"?,
+;;                                         "link"?}]}]}
 ;;
 ;; Colours are theme tokens ("accent") or "#rrggbb". The browser is the
 ;; main editor of documents, so validate-doc checks everything a renderer
@@ -260,6 +261,7 @@ Description: The document of a new deck: one title slide with title as
            (opt run "b" path boolean? "not a boolean")
            (opt run "i" path boolean? "not a boolean")
            (opt run "u" path boolean? "not a boolean")
+           (opt run "code" path boolean? "not a boolean")
            (opt run "color" path color? "not a colour")
            (opt run "size" path (number-in? 1 1000) "not a font size")
            (opt run "link" path safe-link? "not an allowed link"))))

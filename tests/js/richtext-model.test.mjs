@@ -60,6 +60,16 @@ test("setMark, rangeHasMark and rangeMarkValue", () => {
   assert.equal(rt.rangeMarkValue(t, P(0, 0), P(0, 4), "size"), undefined);
 });
 
+test("code is a mark like the others", () => {
+  const t = T([R("call f(x) now")]);
+  rt.setMark(t, P(0, 5), P(0, 9), "code", true);
+  assert.deepEqual(t, T([R("call "), R("f(x)", { code: true }), R(" now")]));
+  assert.equal(rt.rangeHasMark(t, P(0, 5), P(0, 9), "code"), true);
+  // typing at the end of the code continues it
+  rt.insertText(t, P(0, 9), ";");
+  assert.deepEqual(t.paragraphs[0].runs[1], R("f(x);", { code: true }));
+});
+
 test("sliceText and insertFragment round trip", () => {
   const t = T([R("one "), R("two", { b: true })], { list: "bullet", runs: [R("three")] }, [R("four")]);
   const frag = rt.sliceText(t, P(0, 4), P(2, 2));

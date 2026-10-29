@@ -166,13 +166,16 @@ Description: The files of the offline player: a list of (name text . s)
                                  (cons 'file (string-append static-dir "/fonts/" font))))
             (font-files (find-design design-id)))))
 
-    ;; The font files (static/fonts) of a design's family.
+    ;; The font files (static/fonts) of a design's family, and the code
+    ;; font's.
     (define (font-files design)
       (let* ((body (cdr (assoc "body" (design-ref design "fonts"))))
              (family (cdr (assoc "family" body))))
-        (if (equal? family "Roboto Slab")
-            '("RobotoSlab-Regular.woff2" "RobotoSlab-Bold.woff2" "RobotoSlab-LICENSE.txt")
-            '("Inter-Regular.woff2" "Inter-Black.woff2" "Inter-LICENSE.txt"))))
+        (append
+         (if (equal? family "Roboto Slab")
+             '("RobotoSlab-Regular.woff2" "RobotoSlab-Bold.woff2" "RobotoSlab-LICENSE.txt")
+             '("Inter-Regular.woff2" "Inter-Black.woff2" "Inter-LICENSE.txt"))
+         '("JetBrainsMono-Regular.woff2" "JetBrainsMono-Bold.woff2" "JetBrainsMono-LICENSE.txt"))))
 
     (define (write-bundle! db data-dir static-dir deck out-path)
       "Syntax: (write-bundle! db data-dir static-dir deck out-path)

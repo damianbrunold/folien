@@ -299,6 +299,11 @@ export class RichTextEditor {
       this.toggleMark(e.key);
       return;
     }
+    if (mod && !e.altKey && e.key === "e") {
+      e.preventDefault();
+      this.toggleMark("code");
+      return;
+    }
     if (mod && e.key.toLowerCase() === "a") {
       e.preventDefault();
       this.setSelection(rt.startPos(), rt.endPos(this.text));

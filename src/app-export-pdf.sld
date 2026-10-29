@@ -7,7 +7,9 @@
 ;; (the design's family from (scm fonts inter) or (scm fonts roboto-slab),
 ;; written as TrueType and embedded), kerned. Bold and heading text use
 ;; the family's heavy face (Inter Black, Roboto Slab Bold), italics are
-;; slanted. Text is real text: selectable, searchable,
+;; slanted. Runs marked as code are set in the design's code font
+;; (JetBrains Mono) from the dabscm-fonts package via (scm fonts); without
+;; the package they keep the text's font. Text is real text: selectable, searchable,
 ;; web links clickable.
 ;;
 ;; Layouts: 1, 2 or 4 slides per page, with or without the notes. One
@@ -22,6 +24,7 @@
           (scheme char)
           (scheme file)
           (scheme inexact)
+          (scheme lazy)
           (srfi 69)
           (only (srfi 19) current-date date->string)
           (scm fs)
@@ -29,6 +32,7 @@
           (scm truetype)
           (scm fonts inter)
           (scm fonts roboto-slab)
+          (only (scm fonts) find-font find-font-file)
           (scm text layout)
           (scm svg raster)
           (only (scm raster) canvas-width canvas->png)
@@ -88,13 +92,44 @@
                    (/ (font-ascent tt) (font-units-per-em tt))
                    (/ (- (font-descent tt)) (font-units-per-em tt)))))
 
-    ;; Everything a drawing needs. regular and black are faces.
+    ;; A font file found by (scm fonts), embedded as it is (the PDF writer
+    ;; subsets it).
+    (define (embed-file-face pdf font bytes name)
+      (make-face (pdf-embed-truetype-font pdf bytes name)
+                 (kerning-of font)
+                 (/ (font-ascent font) (font-units-per-em font))
+                 (/ (- (font-descent font)) (font-units-per-em font))))
+
+    ;; The code font's faces (regular . bold), or #f when the font is not
+    ;; installed: embedded when the first code run needs them.
+    (define (code-faces pdf design)
+      (delay
+        (let* ((code (jr (design-ref design "fonts") "code"))
+               (family (and code (jr code "family")))
+               (regular (and family (find-font family 400)))
+               (bold (and family (find-font family 700))))
+          (and regular bold
+               (let ((ps (list->string (filter-chars (lambda (c) (not (char=? c #\space)))
+                                                     (string->list family)))))
+                 (cons (embed-file-face pdf regular (find-font-file family 400)
+                                        (string-append ps "-Regular"))
+                       (embed-file-face pdf bold (find-font-file family 700)
+                                        (string-append ps "-Bold"))))))))
+
+    (define (filter-chars keep? cs)
+      (cond ((null? cs) '())
+            ((keep? (car cs)) (cons (car cs) (filter-chars keep? (cdr cs))))
+            (else (filter-chars keep? (cdr cs)))))
+
+    ;; Everything a drawing needs. regular and black are faces; code a
+    ;; promise of the code faces (see code-faces).
     (define-record-type ctx
-      (make-ctx pdf regular black design data-dir images doc today)
+      (make-ctx pdf regular black code design data-dir images doc today)
       ctx?
       (pdf ctx-pdf)
       (regular ctx-regular)
       (black ctx-black)
+      (code ctx-code)
       (design ctx-design)
       (data-dir ctx-data-dir)
       (images ctx-images)        ; sha -> pdf image or 'none
@@ -152,8 +187,11 @@
         (if f (jr f "weight" 400) 400)))
 
     ;; A text run for the layout: its data is an alist the drawing reads.
-    (define (make-run ctx text black? size color italic? underline? link)
-      (let* ((face (if black? (ctx-black ctx) (ctx-regular ctx)))
+    (define (make-run ctx text black? size color italic? underline? link . code)
+      (let* ((code-faces (and (pair? code) (car code) (force (ctx-code ctx))))
+             (face (cond (code-faces (if black? (cdr code-faces) (car code-faces)))
+                         (black? (ctx-black ctx))
+                         (else (ctx-regular ctx))))
              (font (face-font face))
              (kern (face-kern face)))
         (make-text-run text
@@ -195,7 +233,8 @@
                                            (if (jr r "color") (rgb ctx (jr r "color")) base-color)
                                            (eq? (jr r "i") #t)
                                            (or (eq? (jr r "u") #t) (and (jr r "link") #t))
-                                           (jr r "link")))
+                                           (jr r "link")
+                                           (eq? (jr r "code") #t)))
                                runs))
                      (align (string->symbol (or (jr p "align") (jr base "align") "left")))
                      (lines (layout-paragraph trs (max 1 (- w indent))
@@ -600,7 +639,7 @@
     (define (layout-notes ctx notes w size)
       (if (not notes)
           (values '() 0)
-          (let ((plain-ctx (make-ctx (ctx-pdf ctx) (ctx-regular ctx) (ctx-black ctx)
+          (let ((plain-ctx (make-ctx (ctx-pdf ctx) (ctx-regular ctx) (ctx-black ctx) (ctx-code ctx)
                                      notes-design (ctx-data-dir ctx) (ctx-images ctx) #f "")))
             (layout-rich-text plain-ctx notes
                               `(("font" . "body") ("size" . ,size) ("color" . "#222222"))
@@ -668,6 +707,7 @@ Description: The deck document as a PDF (bytevector). options is an
              (ctx (make-ctx pdf
                             (embed-face pdf family (cadr family))
                             (embed-face pdf family (caddr family))
+                            (code-faces pdf design)
                             design
                             data-dir
                             (make-hash-table equal?)

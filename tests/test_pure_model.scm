@@ -94,6 +94,13 @@
    (vector->list (jref (find-design "zh") "layouts"))))
 
 (test-group "rejected documents"
+  (let* ((run-doc (lambda (run)
+                    (with-element (new-doc "folien" "x")
+                                  `(("id" . "t") ("type" . "text") ("x" . 0) ("y" . 0) ("w" . 10) ("h" . 10)
+                                    ("text" . (("paragraphs" . #((("runs" . #(,run))))))))))))
+    (test-equal #f (validate-doc (run-doc '(("text" . "x") ("code" . #t))) "folien"))
+    (test-assert (has? (validate-doc (run-doc '(("text" . "x") ("code" . "yes"))) "folien")
+                       "not a boolean")))
   (let ((doc (new-doc "folien" "x")))
     (test-assert (has? (validate-doc doc "nope") "unknown design"))
     (test-assert (has? (validate-doc '() "folien") "format"))
