@@ -55,6 +55,11 @@
         ("decorations" . ,(list->vector decorations))
         ("placeholders" . ,(list->vector placeholders))))
 
+    ;; A code block's style: the code font on the light tint, with padding.
+    (define (code-style size)
+      `(("font" . "code") ("size" . ,size) ("color" . "text") ("align" . "left")
+        ("valign" . "top") ("fill" . "light") ("pad" . 36)))
+
     (define (with-footer-color color layout)
       (append layout `(("footerColor" . ,color))))
 
@@ -115,6 +120,12 @@
            (box 120 80 1680 150) (text-style "heading" 72 "text" "left" "bottom"))
          (placeholder "body" "Text"
            (box 120 300 1680 680) (text-style "body" 44 "text" "left" "top")))
+       (layout "title-code" "Titel und Code"
+         (list (folien-title-bar))
+         (placeholder "title" "Titel"
+           (box 120 80 1680 150) (text-style "heading" 72 "text" "left" "bottom"))
+         (placeholder "code" "Code"
+           (box 120 300 1680 680) (code-style 32)))
        (layout "two-columns" "Zwei Spalten"
          (list (folien-title-bar))
          (placeholder "title" "Titel"
@@ -189,6 +200,12 @@
            (box 120 90 1680 150) (text-style "heading" 68 "text" "left" "bottom"))
          (placeholder "body" "Text"
            (box 120 290 1680 690) (text-style "body" 42 "text" "left" "top")))
+       (layout "title-code" "Titel und Code"
+         (list (zh-band))
+         (placeholder "title" "Titel"
+           (box 120 90 1680 150) (text-style "heading" 68 "text" "left" "bottom"))
+         (placeholder "code" "Code"
+           (box 120 290 1680 690) (code-style 32)))
        (layout "two-columns" "Zwei Spalten"
          (list (zh-band))
          (placeholder "title" "Titel"
@@ -277,6 +294,11 @@
            title
            (placeholder "body" "Text"
              (box 120 300 1680 680) (text-style "body" 40 "text" "left" "top")))
+         (layout "title-code" "Titel und Code"
+           ruler
+           title
+           (placeholder "code" "Code"
+             (box 120 300 1680 680) (code-style 32)))
          (layout "two-columns" "Zwei Spalten"
            (cons (rect (box 959 300 2 680) rule) ruler)
            title

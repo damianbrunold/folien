@@ -258,6 +258,11 @@ PDF export takes the font from dabscm's `(scm fonts)`, i.e. the
 `~/.local/share/dabscm/fonts`); without it, code keeps the text's font
 in PDFs. PowerPoint names JetBrains Mono.
 
+Code blocks are text boxes in the code font (`{ }` in the toolbar, the
+layout "Titel und Code", or Schrift: Code in the inspector): on the
+design's light tint with padding (`pad`, Innenabstand), Tab indents by
+two spaces. The exports pad them alike (PowerPoint: text insets).
+
 ## Maintenance and backups
 
 `bin/maintenance.scm` (nightly, `folien-maintenance.timer`) deletes decks

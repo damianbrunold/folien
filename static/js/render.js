@@ -195,6 +195,11 @@ function renderText(r, design, ctx) {
   const s = r.style;
   box.classList.add("valign-" + (s.valign || "top"));
   if (s.fill) box.style.backgroundColor = cssColor(design, s.fill);
+  // Padding inside the box (code blocks): the text gets w - 2 pad.
+  if (s.pad) {
+    box.style.boxSizing = "border-box";
+    box.style.padding = s.pad + "px";
+  }
   const inner = div("text-inner");
   const text = r.el.text || { paragraphs: [] };
   if (isEmptyText(text) && r.placeholder && ctx.editing) {

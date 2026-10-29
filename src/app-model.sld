@@ -21,6 +21,10 @@
 ;;             "style"?, "build"?, "text"?, "asset"?, "alt"?,
 ;;             "table"?: {"rows": [[rich text, ...], ...], "header"?}, ...}
 ;;
+;;   style: fill, stroke, strokeWidth, opacity; for text font (heading,
+;;   body or code: a code block), size, color, align, valign and pad (space
+;;   between the box's edge and its text, slide units).
+;;
 ;;   rich text: {"paragraphs": [{"align"?, "list"?, "level"?,
 ;;                               "runs": [{"text", "b"?, "i"?, "u"?,
 ;;                                         "code"?, "color"?, "size"?,
@@ -293,7 +297,8 @@ Description: The document of a new deck: one title slide with title as
            (opt style "stroke" path color? "not a colour")
            (opt style "strokeWidth" path (number-in? 0 1000) "bad stroke width")
            (opt style "opacity" path (number-in? 0 1) "bad opacity")
-           (opt style "font" path (one-of "heading" "body") "bad font token")
+           (opt style "font" path (one-of "heading" "body" "code") "bad font token")
+           (opt style "pad" path (number-in? 0 400) "bad padding")
            (opt style "size" path (number-in? 1 1000) "bad font size")
            (opt style "color" path color? "not a colour")
            (opt style "align" path (one-of "left" "center" "right" "justify") "bad alignment")

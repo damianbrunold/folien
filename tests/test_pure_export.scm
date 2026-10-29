@@ -204,7 +204,12 @@
                  ("elements"
                   . #((("id" . "b") ("type" . "text") ("placeholder" . "body")
                        ("text" . ,(text (para '((("text" . "Aufruf: ")) (("text" . "(f x)") ("code" . #t))))
-                                        (para '((("text" . "fett") ("code" . #t) ("b" . #t)))))))))))))))
+                                        (para '((("text" . "fett") ("code" . #t) ("b" . #t))))))))))
+                (("id" . "k") ("layout" . "title-code")
+                 ("elements"
+                  . #((("id" . "k1") ("type" . "text") ("placeholder" . "code")
+                       ("text" . ,(text (para '((("text" . "(define (f x)"))))
+                                        (para '((("text" . "  (* x x))")))))))))))))))
     (for-each (lambda (style)
                 (let ((p (open-binary-output-file (string-append dir "/JetBrainsMono-" style ".ttf"))))
                   (write-bytevector (font->truetype (if (equal? style "Bold") dejavu-sans-bold dejavu-sans)
@@ -215,6 +220,7 @@
     (font-search-path! (list dir))
     (test-equal "the code deck is valid" #f (validate-doc code-doc "slab"))
     (let ((s (text-of (deck->pdf code-doc "slab" "Code" data-dir '()))))
+      (test-assert "two pages" (has? s "/Count 2"))
       (test-assert "the code font embedded" (has? s "+JetBrainsMono-Regular"))
       (test-assert "its bold" (has? s "+JetBrainsMono-Bold"))
       (test-assert "the text font too" (has? s "+RobotoSlab-Regular")))
@@ -226,14 +232,18 @@
         (close-port p))
       (call-with-input-zip file
         (lambda (z)
-          (let ((s1 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide1.xml"))))
+          (let ((s1 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide1.xml")))
+                (s2 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide2.xml"))))
             (test-assert (has? s1 "typeface=\"JetBrains Mono\""))
-            (test-assert (has? s1 "typeface=\"Roboto Slab\"")))))
+            (test-assert (has? s1 "typeface=\"Roboto Slab\""))
+            ;; the code block: its padding as insets (36 units), the code font
+            (test-assert (has? s2 "lIns=\"228600\" tIns=\"228600\""))
+            (test-assert (has? s2 "typeface=\"JetBrains Mono\"")))))
       (delete-file file))
     ;; without the font, code keeps the text's font
     (font-search-path! '())
     (let ((s (text-of (deck->pdf code-doc "slab" "Code" data-dir '()))))
-      (test-assert (has? s "/Count 1"))
+      (test-assert (has? s "/Count 2"))
       (test-assert (not (has? s "JetBrainsMono"))))
     (font-search-path! saved)
     (for-each (lambda (f) (delete-file (string-append dir "/" f))) (directory-files dir))

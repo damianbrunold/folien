@@ -165,6 +165,33 @@ test("code: Ctrl+E, the toolbar button, the code font", async () => {
   assert.deepEqual(runsOf(doc, 0, 0)[0].runs.map((r) => r.code), [undefined]);
 });
 
+test("code block: insert, type, Tab indents", async () => {
+  const before = (await saved()).slides[0].elements.length;
+  await browser.eval(`document.querySelector('button[aria-label="Codeblock einfügen"]').click()`);
+  await browser.waitFor("!!document.querySelector('.text-inner.editing')");
+  await browser.keys("(f x)");
+  await browser.keys(Keys.enter);
+  await browser.keys(Keys.tab);
+  await browser.keys("x");
+  await browser.keys(Keys.escape);
+  const doc = await saved();
+  const el = doc.slides[0].elements[before];
+  assert.equal(el.style.font, "code");
+  assert.equal(el.style.fill, "light");
+  assert.deepEqual(el.text.paragraphs.map((p) => p.runs.map((r) => r.text).join("")), ["(f x)", "  x"]);
+  const look = await browser.eval(`(() => {
+    const box = [...document.querySelectorAll('.ed-stage .slide .el-text')].pop();
+    const cs = getComputedStyle(box);
+    return JSON.stringify([cs.paddingLeft, getComputedStyle(box.querySelector('.text-inner')).fontFamily]);
+  })()`);
+  assert.match(look, /"36px"/);
+  assert.match(look, /JetBrains Mono/);
+  await shot("03c-code-block");
+  // remove it again
+  await browser.keys(Keys.delete);
+  assert.equal((await saved()).slides[0].elements.length, before);
+});
+
 test("insert, move, resize and delete a shape", async () => {
   await browser.eval(`(() => {
     const s = document.querySelector('select[aria-label="Form einfügen"]');

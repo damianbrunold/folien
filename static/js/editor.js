@@ -531,6 +531,7 @@ function buildToolbar() {
     group(ui.newSlide),
     group(
       tb("T", "Textfeld einfügen", insertTextBox),
+      tb("{ }", "Codeblock einfügen", insertCodeBlock, "code"),
       tb("🖼", "Bild oder Video einfügen", () => pickFiles(true, (files) => insertMedia(files))),
       ui.shapeSelect,
       tb("╱", "Linie einfügen", insertLine),
@@ -1064,8 +1065,14 @@ function startEditing(id, selectAll, clickEvent, cell) {
       else el.text = t;
       afterChange({ light: true });
     },
-    // Tab moves between cells; Tab in the last cell adds a row.
-    tab: table
+    // Tab moves between cells; Tab in the last cell adds a row. In a
+    // code block Tab indents by two spaces (Shift+Tab does nothing there).
+    tab: !table && resolved(el).style.font === "code"
+      ? (e) => {
+          if (!e.shiftKey) ed.typeText("  ");
+          return true;
+        }
+      : table
       ? (e) => {
           const dir = e.shiftKey ? -1 : 1;
           let next = ops.nextCell(table, cell, dir);
@@ -1345,6 +1352,22 @@ function insertTextBox() {
     w: 800,
     h: 200,
     style: { font: "body", size: 40, color: "text", align: "left", valign: "top" },
+    text: rt.emptyText(),
+  };
+  addElement(el);
+  startEditing(el.id, true);
+}
+
+// A code block: the code font on the light tint, padded.
+function insertCodeBlock() {
+  const el = {
+    id: ops.newId(),
+    type: "text",
+    x: 260,
+    y: 340,
+    w: 1400,
+    h: 400,
+    style: { font: "code", size: 32, color: "text", align: "left", valign: "top", fill: "light", pad: 36 },
     text: rt.emptyText(),
   };
   addElement(el);
@@ -1973,8 +1996,11 @@ function elementSection(el) {
 
   if (el.type === "text") {
     children.push(
-      selectField("Schrift", r.style.font || "body", [["heading", "Titel"], ["body", "Text"]], (v) =>
-        setStyle("font", v),
+      selectField(
+        "Schrift",
+        r.style.font || "body",
+        [["heading", "Titel"], ["body", "Text"], ["code", "Code"]],
+        (v) => setStyle("font", v),
       ),
       numberField("Grösse", r.style.size, (n) => setStyle("size", Math.max(1, Math.min(1000, n))), {
         min: 1,
@@ -1990,6 +2016,10 @@ function elementSection(el) {
       ),
       h("label", { class: "field" }, h("span", { text: "Füllung" }),
         colorField(r.style.fill || "none", (c) => setStyle("fill", c === "none" ? undefined : c), { none: true })),
+      numberField("Innenabstand", r.style.pad || 0, (n) => setStyle("pad", Math.max(0, Math.min(400, n))), {
+        min: 0,
+        max: 400,
+      }),
     );
   }
   if (el.type === "table") children.push(...tableFields(el, r, setStyle));
