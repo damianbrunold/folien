@@ -69,6 +69,7 @@ before(async () => {
   s1.elements[2].text = { paragraphs: [{ runs: [{ text: "Ein Bild aus dem Archiv" }] }] };
   const s2 = ops.newSlide(zh, "section");
   s2.elements[0].text = { paragraphs: [{ runs: [{ text: "Zweite Folie" }] }] };
+  s2.notes = { paragraphs: [{ runs: [{ text: "Notiz offline" }] }] };
   writeFileSync(join(dir, "deck.json"), JSON.stringify({
     id: "d1", title: "Offline-Test", design: "zh",
     doc: { format: 1, slides: [s1, s2] },
@@ -131,4 +132,53 @@ test("the one-file player needs nothing beside it", async () => {
   await browser.keys(Keys.right);
   await browser.waitFor("location.hash === '#2'");
   assert.ok(await browser.eval("document.body.textContent.includes('Zweite Folie')"));
+});
+
+// The context of a window the page opened (not one of the known ones).
+async function newWindow(known) {
+  for (let i = 0; i < 100; i++) {
+    const tree = await browser.send("browsingContext.getTree", {});
+    const c = tree.contexts.find((c) => !known.includes(c.context) && c.url.includes("folien.html"));
+    if (c) return Object.create(browser, { context: { value: c.context } });
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error("no new window");
+}
+
+test("the one-file player has a presenter console, in step with the audience window", async () => {
+  await browser.open("file://" + join(dir, "single", "folien.html") + "#1", 1280, 720);
+  await browser.waitFor("!!document.querySelector('.player-layer .slide')", 10000);
+  // R: this window becomes the console, at the same slide
+  await browser.keys("r");
+  await browser.waitFor("location.search === '?referent' && !!document.querySelector('.p-current .slide')", 10000);
+  assert.equal(await browser.eval("document.title"), "Eine Datei (Referentenansicht) · Folien");
+  assert.equal(await browser.eval("!!document.querySelector('button[title^=\"Fernbedienung\"]')"), false);
+  // the console's colours come with the file
+  assert.notEqual(await browser.eval("getComputedStyle(document.body).getPropertyValue('--accent').trim()"), "");
+
+  const known = (await browser.send("browsingContext.getTree", {})).contexts.map((c) => c.context);
+  await browser.eval("[...document.querySelectorAll('.pbtn')].find((b) => b.textContent === 'Publikumsfenster öffnen').click()");
+  const audience = await newWindow(known);
+  await audience.waitFor("!!document.querySelector('.player-layer .slide')", 10000);
+  assert.equal(await audience.eval("location.search"), "");
+  assert.equal(await audience.eval("!!document.querySelector('button[title=\"Referentenansicht (R)\"]')"), false);
+
+  // the console steers the audience window
+  await browser.keys(Keys.right);
+  await audience.waitFor("location.hash === '#2'", 5000);
+  assert.equal(await browser.eval("document.querySelector('.p-notes').textContent"), "Notiz offline");
+  await browser.keys("b");
+  await audience.waitFor("document.querySelector('.present-blank').classList.contains('black')", 5000);
+  await browser.keys("b");
+  await audience.waitFor("!document.querySelector('.present-blank').classList.contains('black')", 5000);
+  // and the other way round
+  await audience.keys(Keys.left);
+  await browser.waitFor("document.querySelector('.p-label').textContent.startsWith('Folie 1')", 5000);
+  if (process.env.FOLIEN_SHOTS) {
+    writeFileSync(process.env.FOLIEN_SHOTS + "/12-offline-presenter.png", await browser.screenshot());
+  }
+  // "Beenden": back to the presentation, at the console's slide
+  await browser.eval("[...document.querySelectorAll('.pbtn')].find((b) => b.textContent === 'Beenden').click()");
+  await browser.waitFor("location.search === '' && !!document.querySelector('.player-layer .slide')", 10000);
+  await browser.send("browsingContext.close", { context: audience.context });
 });

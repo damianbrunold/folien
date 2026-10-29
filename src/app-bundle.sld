@@ -18,8 +18,9 @@
 ;; checked before and while unpacking, every asset must hash to its name
 ;; and be a type folien accepts, the document must validate.
 ;;
-;; The offline player also comes on its own, without notes and hidden
-;; slides, for presenting without a network: as one HTML file with
+;; The offline player also comes on its own, without hidden slides and
+;; with or without the notes (its presenter console shows them), for
+;; presenting without a network: as one HTML file with
 ;; everything in it (write-offline-html!; its images and videos are
 ;; turned into blob URLs when it opens), or as a zip of the player's
 ;; folder with the files beside it (write-offline-zip!: better for large
@@ -62,7 +63,8 @@
 
     ;; The modules of the offline player, dependencies first.
     (define player-modules
-      '("render.js" "shortcuts.js" "deck-nav.js" "player.js" "sync.js" "present-app.js" "offline.js"))
+      '("render.js" "shortcuts.js" "deck-nav.js" "player.js" "sync.js" "present-app.js"
+        "remote-qr.js" "presenter-app.js" "offline.js"))
 
     ;; --- errors -------------------------------------------------------
 
@@ -124,6 +126,7 @@ Description: The asset hashes the document's elements refer to (asset
        "<!doctype html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n"
        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
        "<title>" (html-escape title) "</title>\n"
+       "<link rel=\"stylesheet\" href=\"css/app.css\">\n"
        "<link rel=\"stylesheet\" href=\"css/slides.css\">\n"
        "<link rel=\"stylesheet\" href=\"css/present.css\">\n"
        "</head>\n<body class=\"present-body\">\n"
@@ -174,7 +177,7 @@ Description: The files of the offline player: a list of (name text . s)
                    (cons 'text (bundle-modules (string-append static-dir "/js") player-modules))))
        (map (lambda (css) (cons (string-append dir "css/" css)
                                 (cons 'file (string-append static-dir "/css/" css))))
-            '("slides.css" "present.css"))
+            '("app.css" "slides.css" "present.css"))
        (map (lambda (font) (cons (string-append dir "fonts/" font)
                                  (cons 'file (string-append static-dir "/fonts/" font))))
             (font-files (find-design design-id)))))
@@ -264,7 +267,7 @@ Description: Writes the bundle of deck (a row from load-deck) to the
 
     ;; --- the offline player on its own ------------------------------------
 
-    (define (offline-readme title)
+    (define (offline-readme title notes?)
       (string-append
        "Folien – " title "\n"
        "\n"
@@ -273,21 +276,35 @@ Description: Writes the bundle of deck (a row from load-deck) to the
        "lassen), F für Vollbild, Pfeiltasten oder Leertaste zum Blättern,\n"
        "B schwarz, W weiss.\n"
        "\n"
-       "Notizen und ausgeblendete Folien sind nicht dabei.\n"))
+       "R öffnet die Referentenansicht (Notizen, nächste Folie, Zeit); dort\n"
+       "öffnet «Publikumsfenster öffnen» die Präsentation für den Beamer in\n"
+       "einem zweiten Fenster (dorthin ziehen, F für Vollbild). Erlaubt der\n"
+       "Browser keine neuen Fenster, sie für diese Datei erlauben.\n"
+       "\n"
+       (if notes?
+           "Die Notizen sind dabei: nicht weitergeben, wenn sie privat sind.\n"
+           "Notizen sind nicht dabei.\n")
+       "Ausgeblendete Folien sind nicht dabei.\n"))
 
-    (define (write-offline-zip! db data-dir static-dir deck out-path)
-      "Syntax: (write-offline-zip! db data-dir static-dir deck out-path)
+    ;; The document of an offline player: no hidden slides, the notes if
+    ;; notes?.
+    (define (offline-doc deck notes?)
+      (shareable-doc (deck-doc deck) notes?))
+
+    (define (write-offline-zip! db data-dir static-dir deck notes? out-path)
+      "Syntax: (write-offline-zip! db data-dir static-dir deck notes? out-path)
 Library: (app bundle)
 Description: Writes the offline player of deck (a row from load-deck),
-  without notes and hidden slides, as a zip of its folder to out-path:
-  index.html, its script, styles and fonts, assets/, LIESMICH.txt."
+  without hidden slides and, unless notes?, without notes, as a zip of
+  its folder to out-path: index.html, its script, styles and fonts,
+  assets/, LIESMICH.txt."
       (let* ((id (col deck "id"))
              (title (col deck "title"))
-             (doc (shareable-doc (deck-doc deck)))
+             (doc (offline-doc deck notes?))
              (rows (doc-asset-rows db data-dir id doc)))
         (call-with-output-zip out-path
           (lambda (z)
-            (text-entry! z "LIESMICH.txt" (offline-readme title))
+            (text-entry! z "LIESMICH.txt" (offline-readme title notes?))
             (for-each (lambda (row)
                         (zip-add-file-entry z (asset-path row) (asset-file data-dir (col row "sha256"))))
                       rows)
@@ -348,6 +365,7 @@ Description: Writes the offline player as one HTML file to port: styles
         (w "<!doctype html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n"
            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
            "<title>" (html-escape title) "</title>\n"
+           "<style>\n" (css "app.css") "\n</style>\n"
            "<style>\n" (css "slides.css") "\n</style>\n"
            "<style>\n" (css "present.css") "\n</style>\n")
         ;; the fonts' licences go with them
@@ -376,13 +394,14 @@ Description: Writes the offline player as one HTML file to port: styles
            (script-safe (bundle-modules (string-append static-dir "/js") player-modules))
            "</script>\n</body>\n</html>\n")))
 
-    (define (write-offline-html! db data-dir static-dir deck out-path)
-      "Syntax: (write-offline-html! db data-dir static-dir deck out-path)
+    (define (write-offline-html! db data-dir static-dir deck notes? out-path)
+      "Syntax: (write-offline-html! db data-dir static-dir deck notes? out-path)
 Library: (app bundle)
 Description: Writes the offline player of deck (a row from load-deck),
-  without notes and hidden slides, as one HTML file to out-path."
+  without hidden slides and, unless notes?, without notes, as one HTML
+  file to out-path."
       (let* ((id (col deck "id"))
-             (doc (shareable-doc (deck-doc deck)))
+             (doc (offline-doc deck notes?))
              (rows (doc-asset-rows db data-dir id doc))
              (port (open-output-file out-path)))
         (write-player-html port static-dir id (col deck "title") (col deck "design") doc

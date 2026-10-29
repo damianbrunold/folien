@@ -565,7 +565,14 @@
                   " (alles darin; im Browser öffnen) oder "
                   (a (@ (href ,(url (string-append "/decks/" id "/export-offline.zip"))))
                      "als Ordner (ZIP)")
-                  " – besser bei grossen Videos. Ohne Notizen und ausgeblendete Folien."))
+                  " – besser bei grossen Videos. Mit Referentenansicht (R) und Notizen; "
+                  "zum Weitergeben ohne Notizen: "
+                  (a (@ (href ,(url (string-append "/decks/" id "/export.html?notes=0"))))
+                     "HTML-Datei")
+                  ", "
+                  (a (@ (href ,(url (string-append "/decks/" id "/export-offline.zip?notes=0"))))
+                     "Ordner")
+                  ". Ausgeblendete Folien sind nie dabei."))
              ,(if active?
                   `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/rename")))
                             (class "row-form spaced"))

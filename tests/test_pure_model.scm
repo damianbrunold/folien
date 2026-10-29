@@ -207,6 +207,9 @@
     (test-equal '("a" "c") (map (lambda (s) (jref s "id")) (vector->list (doc-slides shared))))
     (test-equal #f (jref (vector-ref (doc-slides shared) 0) "notes" #f))
     (test-equal "the footer stays" "auto" (jref (jref shared "footer") "date"))
+    (test-equal "notes kept on request" notes
+      (jref (vector-ref (doc-slides (shareable-doc doc #t)) 0) "notes"))
+    (test-equal 2 (vector-length (doc-slides (shareable-doc doc #t))))
     (test-equal "fixed" (jref (jref published "footer") "date"))
     (test-equal "29.10.2026" (jref (jref published "footer") "dateText"))
     (test-equal "Bern" (jref (jref published "footer") "text"))

@@ -23,15 +23,21 @@ function el(tag, cls, text) {
 // assetUrl(sha), exitUrl (where "Beenden" and Esc go, unless the window
 // was opened by the editor or the deck page: then it closes; none: no such
 // button),
-// eventsUrl (the server's event stream; none: no remote control).
+// eventsUrl (the server's event stream; none: no remote control),
+// presenterUrl (the offline player: R switches this window to the
+// presenter console there, unless another window opened it), windows
+// (talk to the window that opened this one directly: see Sync).
 export function startPresentation(root, opts) {
   const { deck, doc, design, assetUrl } = opts;
   document.title = deck.title + " · Folien";
+  const presenterUrl = opts.presenterUrl && !window.opener ? opts.presenterUrl : null;
 
   const stage = el("div", "present-stage");
   const blank = el("div", "present-blank");
   const end = el("div", "present-end", "Ende der Präsentation – Esc beendet, ← zurück");
-  const hint = el("div", "present-hint", "F Vollbild · ← → blättern · B schwarz · W weiss · Esc beenden");
+  const hint = el("div", "present-hint",
+    "F Vollbild · ← → blättern · B schwarz · W weiss" +
+    (presenterUrl ? " · R Referentenansicht" : "") + (opts.exitUrl || window.opener ? " · Esc beenden" : ""));
   const controls = el("div", "present-controls");
   const btn = (label, title, f) => {
     const b = el("button", "present-btn", label);
@@ -51,6 +57,7 @@ export function startPresentation(root, opts) {
     counter,
     btn("›", "Weiter", () => step("next")),
     btn("⛶", "Vollbild (F)", toggleFullscreen),
+    presenterUrl ? btn("▤", "Referentenansicht (R)", openPresenter) : el("span"),
     opts.exitUrl ? btn("✕", "Beenden (Esc)", exit) : el("span"),
   );
   root.replaceChildren(stage, blank, end, controls, hint);
@@ -70,6 +77,11 @@ export function startPresentation(root, opts) {
   }
   setTimeout(() => hint.classList.add("gone"), 3500);
 
+  // This window becomes the console, at the same place.
+  function openPresenter() {
+    location.href = presenterUrl + hashOf(pos);
+  }
+
   const byId = new Map(doc.slides.map((s, i) => [s.id, i]));
   const player = new Player(stage, doc, design, {
     assetUrl,
@@ -84,6 +96,7 @@ export function startPresentation(root, opts) {
     deckId: deck.id,
     eventsUrl: opts.eventsUrl,
     remote: !!opts.eventsUrl,
+    windows: !!opts.windows,
     onMessage(m, via) {
       if (m.type === "hello") {
         const state = { type: "state", pos, blank: blanked };
@@ -165,6 +178,7 @@ export function startPresentation(root, opts) {
       [
         ...PRESENT_KEYS,
         ["F", "Vollbild ein / aus"],
+        ...(presenterUrl ? [["R", "Referentenansicht (Notizen, nächste Folie, Zeit)"]] : []),
         ["Esc", "Präsentation beenden (im Vollbild: zuerst Vollbild verlassen)"],
         ["? / F1", "Diese Hilfe"],
       ],
@@ -191,6 +205,11 @@ export function startPresentation(root, opts) {
     if (e.key === "Escape") {
       e.preventDefault();
       exit();
+      return;
+    }
+    if ((e.key === "r" || e.key === "R") && presenterUrl && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      openPresenter();
       return;
     }
     const what = presentKey(e);

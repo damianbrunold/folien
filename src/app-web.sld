@@ -895,12 +895,16 @@ Description: Builds the app's request handler. settings is an alist:
                        ("Cache-Control" . "no-store"))
                      (bundle-file data-dir static-dir db deck)))))))
 
-        ;; The offline player alone, without notes and hidden slides: one
-        ;; HTML file, or its folder as a zip.
+        ;; The offline player alone, without hidden slides: one HTML
+        ;; file, or its folder as a zip. With the notes (for its presenter
+        ;; console), or without them: ?notes=0.
         (let ((offline (lambda (kind ext content-type write!)
                          (signed-in
                            (lambda (req params user)
-                             (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                             (let* ((deck (load-deck db (col user "id") (params-ref params "id")))
+                                    (notes? (not (equal? (assoc "notes" (url-query-params (http-request-url req)))
+                                                         '("notes" . "0"))))
+                                    (kind (if notes? kind (string-append kind "-no-notes"))))
                                (if (not deck)
                                    (http-not-found)
                                    (make-http-file-response
@@ -911,7 +915,7 @@ Description: Builds the app's request handler. settings is an alist:
                                       ("Cache-Control" . "no-store"))
                                     (cached-file data-dir (string-append (col deck "id") "-" kind) (if (string=? ext ".html") ".html" ".zip")
                                                  (deck-key deck kind)
-                                                 (lambda (tmp) (write! db data-dir static-dir deck tmp)))))))))))
+                                                 (lambda (tmp) (write! db data-dir static-dir deck notes? tmp)))))))))))
           (route! "GET" "/decks/:id/export.html"
             (offline "offline-html" ".html" "text/html; charset=utf-8" write-offline-html!))
           (route! "GET" "/decks/:id/export-offline.zip"

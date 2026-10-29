@@ -89,12 +89,13 @@ Description: The number shown on the slide at index: its position among
               n
               (loop (+ i 1) (if (eq? (jref (vector-ref slides i) "hidden") #t) n (+ n 1)))))))
 
-    (define (shareable-doc doc)
-      "Syntax: (shareable-doc doc)
+    (define (shareable-doc doc . keep-notes)
+      "Syntax: (shareable-doc doc [keep-notes?])
 Library: (app model)
 Description: The document as others may see it (publications, offline
-  players): without the speaker notes and the hidden slides. Slide
-  numbers stay as they were, since hidden slides do not count."
+  players): without the hidden slides and, unless keep-notes? is true,
+  the speaker notes. Slide numbers stay as they were, since hidden
+  slides do not count."
       (map (lambda (p)
              (if (equal? (car p) "slides")
                  (cons "slides"
@@ -105,7 +106,9 @@ Description: The document as others may see it (publications, offline
                                 (else (loop (cdr ss)
                                             (cons (let drop ((ps (car ss)))
                                                     (cond ((null? ps) '())
-                                                          ((equal? (caar ps) "notes") (drop (cdr ps)))
+                                                          ((and (equal? (caar ps) "notes")
+                                                                (not (and (pair? keep-notes) (car keep-notes))))
+                                                           (drop (cdr ps)))
                                                           (else (cons (car ps) (drop (cdr ps))))))
                                                   acc)))))))
                  p))

@@ -157,7 +157,8 @@ and `LIESMICH.txt`. Bundles are cached per deck version in
 ## Offline
 
 To present without a network, the overview's export section offers the
-offline player on its own, without notes and hidden slides:
+offline player on its own, without hidden slides, with the notes (for
+its presenter console) or, to pass it on, without them (`?notes=0`):
 
 - `GET /decks/<id>/export.html`: one HTML file with everything in it
   (script, styles, the design's fonts as data URLs, their licences, the
@@ -167,8 +168,14 @@ offline player on its own, without notes and hidden slides:
   `assets/`, `fonts/`, ...), better for large videos, which make the one
   file big and slow to open.
 
-Both are cached like bundles. The player has no presenter console or
-remote.
+Both are cached like bundles. R switches the presentation to the
+presenter console (`index.html?referent`, also in a bundle's player:
+`static/js/presenter-app.js`, shared with the app), whose
+"Publikumsfenster öffnen" opens the presentation as a second window of
+the same file. Pages from files may have no working BroadcastChannel
+(Firefox gives each file its own origin), so the two windows also talk
+directly with `postMessage` (`Sync`'s windows option). There is no remote
+without the server.
 
 ## Publishing
 

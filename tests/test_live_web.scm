@@ -981,7 +981,8 @@
           (test-equal (deck-url "?m=not-owner") (location (send "POST" (deck-url "/publish") fay)))
           (send "POST" (deck-url "/restore") fay)
           (test-equal 200 (status (send "GET" "/p/tagung-bern" #f))))
-        ;; The offline players: without notes and hidden slides.
+        ;; The offline players: without hidden slides; with the notes for
+        ;; the presenter console, or without them (?notes=0).
         (let* ((r (send "GET" (deck-url "/export.html") fay))
                (html (body r)))
           (test-equal 200 (status r))
@@ -990,7 +991,10 @@
           (test-assert (has? html (string-append "data-sha=\"" sha "\"")))
           (test-assert (has? html (base64-encode png)))
           (test-assert "the hidden slide's image is not in it" (not (has? html hidden-sha)))
-          (test-assert "nor the notes" (not (has? html "Andere Notiz")))
+          (test-assert "the notes for the console" (has? html "Andere Notiz"))
+          (test-assert "with the console's code" (has? html "startPresenter"))
+          (test-assert "without notes on request"
+            (not (has? (body (send "GET" (deck-url "/export.html?notes=0") fay)) "Andere Notiz")))
           (test-assert "fonts inline" (has? html "url(\"data:font/woff2;base64,"))
           (test-assert "no script ends early" (not (has? (substring html (string-length "<!doctype") (string-length html))
                                                         "</script><")))
@@ -1010,8 +1014,18 @@
                                 "css/slides.css" "fonts/Inter-Regular.woff2"
                                 (string-append "assets/" sha ".png")))
                 (test-assert (not (member (string-append "assets/" hidden-sha ".png") names)))
-                (test-assert (not (has? (utf8->string (zip-read-entry-bytevector z "deck-data.js"))
-                                        "Andere Notiz")))))))))
+                (test-assert (member "css/app.css" names))
+                (test-assert (has? (utf8->string (zip-read-entry-bytevector z "deck-data.js"))
+                                   "Andere Notiz")))))
+          (let ((p (open-binary-output-file zip-file)))
+            (write-bytevector (http-response-body (send "GET" (deck-url "/export-offline.zip?notes=0") fay)) p)
+            (close-port p))
+          (call-with-input-zip zip-file
+            (lambda (z)
+              (test-assert "the folder without notes"
+                (not (has? (utf8->string (zip-read-entry-bytevector z "deck-data.js")) "Andere Notiz")))
+              (test-assert (has? (utf8->string (zip-read-entry-bytevector z "LIESMICH.txt"))
+                                 "Notizen sind nicht dabei")))))))
 
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))

@@ -14,16 +14,32 @@
 //   {type: "ping"}               the server's keepalive (ignored)
 // Positions are absolute, so a message that arrives twice (directly and
 // through the server) does no harm.
+//
+// Pages opened from a file (the offline player) may get no working
+// BroadcastChannel (Firefox gives every file its own origin), so there
+// the console and the audience window it opened also talk directly with
+// postMessage (option windows): to the window that opened this one, and
+// to those added with addPeer.
 
 import { loadDesignFonts } from "./render.js";
 
 export class Sync {
   // opts: deckId, eventsUrl, onMessage(msg, via) with via "local" or
   // "remote", onConnection(connected), remote (default true): also use
-  // the server.
+  // the server, windows: also postMessage to related windows.
   constructor(opts) {
     this.opts = opts;
     this.id = Math.random().toString(36).slice(2, 12);
+    this.peers = new Set();
+    if (opts.windows) {
+      if (window.opener) this.peers.add(window.opener);
+      window.addEventListener("message", (e) => {
+        const m = e.data;
+        if (this.peers.has(e.source) && m && m.folien === opts.deckId && m.from !== this.id) {
+          opts.onMessage(m, "local");
+        }
+      });
+    }
     try {
       this.bc = new BroadcastChannel("folien-" + opts.deckId);
       this.bc.onmessage = (e) => {
@@ -89,9 +105,23 @@ export class Sync {
     this.es.onerror = () => this.opts.onConnection && this.opts.onConnection(false);
   }
 
+  // A window to talk to directly (windows option).
+  addPeer(w) {
+    if (w) this.peers.add(w);
+  }
+
   // To the other windows on this computer.
   local(msg) {
-    if (this.bc) this.bc.postMessage(Object.assign({}, msg, { from: this.id }));
+    const m = Object.assign({}, msg, { from: this.id });
+    if (this.bc) this.bc.postMessage(m);
+    for (const w of this.peers) {
+      try {
+        // our own windows, opened from a file: their origin is opaque
+        if (!w.closed) w.postMessage(Object.assign({ folien: this.opts.deckId }, m), "*");
+      } catch (e) {
+        this.peers.delete(w);
+      }
+    }
   }
 
   // Through the server, to all windows of the deck anywhere.
