@@ -15,8 +15,35 @@ import {
   renderNotes,
 } from "./render.js";
 import { installShortcutHelp, isTyping } from "./shortcuts.js";
+import { remoteQrParts } from "./remote-qr.js";
 
 const root = document.getElementById("viewer");
+
+// The "QR-Code" button beside "Fernbedienung": shows or hides the
+// remote's address as a QR code below the actions.
+function wireRemoteQr() {
+  const btn = document.querySelector(".js-remote-qr");
+  if (!btn) return;
+  btn.hidden = false;
+  let box = null;
+  btn.addEventListener("click", () => {
+    if (box) {
+      box.remove();
+      box = null;
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    box = document.createElement("div");
+    box.id = "remote-qr-box";
+    box.className = "remote-qr-box";
+    const p = document.createElement("p");
+    p.textContent = "Mit der Kamera des Telefons scannen, dann mit demselben Konto anmelden:";
+    box.append(p, ...remoteQrParts(btn.dataset.remoteUrl));
+    btn.closest(".actions").after(box);
+    btn.setAttribute("aria-expanded", "true");
+  });
+}
+wireRemoteQr();
 
 async function getJSON(url) {
   const r = await fetch(url, { headers: { Accept: "application/json" } });

@@ -74,12 +74,16 @@
 
     (define (id->string x) (if (number? x) (number->string x) x))
 
-    (define (login-page error?)
+    ;; next: the page to go to after signing in (a site path), or #f.
+    (define (login-page error? . next)
       (page "Anmelden" #f
         `(section (@ (class "card narrow"))
            (h2 "Anmelden")
            ,(notice (and error? '(error . "Benutzername oder Passwort ist falsch.")))
            (form (@ (method "post") (action ,(url "/login")))
+             ,(if (and (pair? next) (car next))
+                  `(input (@ (type "hidden") (name "next") (value ,(car next))))
+                  "")
              (label "Benutzername"
                (input (@ (name "username") (autocomplete "username")
                          (autofocus #t) (required #t))))
@@ -444,6 +448,12 @@
                     "Referentenansicht")
                  (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/remote"))))
                     "Fernbedienung")
+                 ;; shown by viewer.js (the code needs the browser's address)
+                 (button (@ (type "button") (class "small js-remote-qr") (hidden #t)
+                            (aria-expanded "false") (aria-controls "remote-qr-box")
+                            (data-remote-url ,(url (string-append "/decks/" id "/remote")))
+                            (title "QR-Code der Fernbedienung für das Telefon"))
+                   "QR-Code")
                  ,@(deck-actions status id role)))
              ,(notice msg)
              (div (@ (id "viewer") (class "viewer")

@@ -165,7 +165,11 @@ number and Enter jump). The "Referentenansicht" shows the current slide,
 what the next click brings, the notes, a timer and the clock; it opens
 the audience window (drag it to the projector and press F there) and
 both stay in step over a BroadcastChannel. The "Fernbedienung" (open it
-on a phone, signed in as the same user) steers through the server, which
+on a phone, signed in as the same user: the presenter console's
+"Fernbedienung" and the deck page's "QR-Code" show its address as a QR
+code, `GET /decks/<id>/remote-qr.svg?origin=…`, drawn with dabscm's
+`(scm qr)`; signing in comes back to the page asked for, `/login?next=`)
+steers through the server, which
 relays every message to all windows of the deck (src/app-remote.sld):
 over a WebSocket, `GET /api/decks/<id>/socket`, both ways; where that
 cannot connect (a proxy without WebSocket support) the browsers fall back

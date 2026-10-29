@@ -137,6 +137,20 @@ test("the presenter console keeps the presentation in step", async () => {
   browser.audienceTab = audience;
 });
 
+test("the presenter console shows the remote's address as a QR code", async () => {
+  const presenter = browser.presenterTab;
+  await presenter.eval("document.querySelector('button[title=\"Fernbedienung auf einem anderen Gerät öffnen\"]').focus()");
+  await presenter.eval("document.activeElement.click()");
+  await presenter.waitFor("!!document.querySelector('.p-remote-info img.remote-qr')");
+  const src = await presenter.eval("document.querySelector('.p-remote-info img.remote-qr').getAttribute('src')");
+  assert.equal(src, "/remote.html-qr.svg?origin=" + encodeURIComponent(server.url));
+  // the test server is 127.0.0.1: a phone could not reach it
+  assert.match(await presenter.eval("document.querySelector('.p-remote-info').textContent"), /erreicht nur dieser Computer/);
+  await presenter.keys(Keys.escape);
+  await presenter.waitFor("!document.querySelector('.p-remote-info')");
+  assert.match(await presenter.eval("document.activeElement.textContent"), /Fernbedienung/);
+});
+
 test("the remote steers both", async () => {
   const { presenterTab: presenter, audienceTab: audience } = browser;
   const remote = await browser.newTab(server.url + "/remote.html");

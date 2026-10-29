@@ -10,6 +10,7 @@ import { renderSlide, renderNotes, fitInto } from "./render.js";
 import * as nav from "./deck-nav.js";
 import { Sync, posFromHash, loadDeck, presentKey, PRESENT_KEYS } from "./sync.js";
 import { installShortcutHelp, shortcutHelpOpen } from "./shortcuts.js";
+import { remoteQrParts } from "./remote-qr.js";
 
 const root = document.getElementById("presenter");
 const urls = root.dataset;
@@ -249,16 +250,31 @@ async function main() {
   }
 
   function showRemote() {
+    const old = root.querySelector(".p-remote-info");
+    if (old) old.remove();
     const box = el("div", "p-remote-info");
-    const link = el("a", "", location.origin + urls.remoteUrl);
-    link.href = urls.remoteUrl;
-    link.target = "_blank";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", "Fernbedienung");
+    const opener = document.activeElement;
+    const done = () => {
+      box.remove();
+      if (opener && opener.focus) opener.focus();
+    };
+    const close = button("Schliessen", "Schliessen", done);
     box.append(
-      el("p", "", "Öffnen Sie diese Adresse auf dem Telefon und melden Sie sich mit demselben Konto an:"),
-      link,
-      button("Schliessen", "Schliessen", () => box.remove()),
+      el("p", "", "Scannen Sie den Code mit der Kamera des Telefons (oder öffnen Sie die Adresse) " +
+        "und melden Sie sich mit demselben Konto an:"),
+      ...remoteQrParts(urls.remoteUrl),
+      close,
     );
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        done();
+      }
+    });
     root.appendChild(box);
+    close.focus();
   }
 
   installShortcutHelp("Tastenkürzel in der Referentenansicht", () => [

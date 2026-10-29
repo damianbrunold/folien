@@ -406,3 +406,18 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 .menu-item:hover, .menu-item:focus-visible { background: var(--row); color: var(--accent); }
 .menu-item.menu-danger { color: var(--danger); }
 .menu-item.menu-danger:hover { color: var(--on-accent); background: var(--danger); }
+
+/* The remote's QR code (static/js/remote-qr.js): dark on white in every
+   theme, with room around it, so phone cameras read it. */
+.remote-qr {
+  display: block;
+  width: 240px;
+  height: 240px;
+  margin: 0.75rem 0 0.25rem;
+  background: #ffffff;
+  border-radius: 6px;
+}
+.remote-qr-link { display: block; margin: 0.25rem 0 0.75rem; word-break: break-all; }
+.remote-qr-warning { color: var(--danger); font-size: 0.9rem; }
+.remote-qr-box { margin: 0.75rem 0 0; }
+.remote-qr-box p { margin: 0; }

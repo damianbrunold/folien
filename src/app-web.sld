@@ -15,7 +15,7 @@
 
 (define-library (app web)
   (import (scheme base)
-          (only (scheme char) string-downcase)
+          (only (scheme char) string-downcase char-alphabetic? char-numeric?)
           (srfi 18)
           (scm crypto password)
           (scm json simple)
@@ -32,6 +32,7 @@
           (scm net http session)
           (scm net http middleware)
           (scm net websocket)
+          (only (scm qr) qr-encode qr->svg)
           (app site)
           (app db)
           (app users)
@@ -386,11 +387,61 @@ Description: Builds the app's request handler. settings is an alist:
         (define (who user) (list (col user "username") (admin? user)))
 
         ;; Runs handler with the signed-in user row as a third argument, or
-        ;; sends the browser to the sign-in page.
+        ;; sends the browser to the sign-in page, which comes back to the
+        ;; page asked for (a GET) after signing in.
         (define (signed-in handler)
           (lambda (req params)
             (let ((user (session-user auth req)))
-              (if user (handler req params user) (redirect "/login")))))
+              (cond (user (handler req params user))
+                    ((and (equal? (http-request-method req) "GET")
+                          (not (equal? (site-relative (http-request-url req)) "/")))
+                     (redirect (string-append "/login?next="
+                                              (percent-encode (site-relative (http-request-url req))))))
+                    (else (redirect "/login"))))))
+
+        ;; "http(s)://host[:port]" and nothing more: a host name, an IPv4
+        ;; address or a bracketed IPv6 address.
+        (define (web-origin? s)
+          (let* ((n (string-length s))
+                 (after (cond ((and (> n 8) (string=? (substring s 0 8) "https://")) 8)
+                              ((and (> n 7) (string=? (substring s 0 7) "http://")) 7)
+                              (else #f))))
+            (and after
+                 (< n 300)
+                 (> n after)
+                 (let loop ((i after) (colon #f))
+                   (cond ((= i n) #t)
+                         ((let ((c (string-ref s i)))
+                            (or (char-alphabetic? c) (char-numeric? c)
+                                (memv c '(#\. #\- #\[ #\]))))
+                          (and (< (char->integer (string-ref s i)) 128) (loop (+ i 1) colon)))
+                         ((char=? (string-ref s i) #\:) (loop (+ i 1) #t))
+                         (else #f))))))
+
+        ;; A request URL without the site's prefix, as redirect takes it.
+        (define (site-relative path)
+          (let ((p (url "")))
+            (if (and (> (string-length p) 0)
+                     (>= (string-length path) (string-length p))
+                     (string=? (substring path 0 (string-length p)) p))
+                (substring path (string-length p) (string-length path))
+                path)))
+
+        ;; Where to go after signing in: a path of this site ("/decks/..."),
+        ;; never another host ("//evil", "/\\evil", "https:...").
+        (define (safe-next s)
+          (and (string? s)
+               (> (string-length s) 0)
+               (< (string-length s) 2000)
+               (char=? (string-ref s 0) #\/)
+               (not (and (> (string-length s) 1)
+                         (memv (string-ref s 1) '(#\/ #\\))))
+               (let loop ((i 0))
+                 (or (= i (string-length s))
+                     (and (char>? (string-ref s i) #\space)
+                          (not (char=? (string-ref s i) #\\))
+                          (loop (+ i 1)))))
+               s))
 
         ;; The same for the JSON API: 401 instead of a redirect.
         (define (api-signed-in handler)
@@ -809,6 +860,28 @@ Description: Builds the app's request handler. settings is an alist:
         (route! "GET" "/decks/:id/presenter" (deck-app-page presenter-page))
         (route! "GET" "/decks/:id/remote" (deck-app-page remote-page))
 
+        ;; The remote's address as a QR code (SVG), for a phone's camera.
+        ;; origin: how the asking browser reaches this site
+        ;; ("https://folien.example.org"); the code holds origin + the
+        ;; deck's remote path, nothing else.
+        (route! "GET" "/decks/:id/remote-qr.svg"
+          (signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (deck (load-deck db (col user "id") id))
+                     (origin (let ((p (assoc "origin" (url-query-params (http-request-url req)))))
+                               (and p (web-origin? (cdr p)) (cdr p)))))
+                (cond
+                  ((not deck) (make-http-response 404 '(("Content-Type" . "text/plain")) "not found"))
+                  ((not origin) (make-http-response 400 '(("Content-Type" . "text/plain")) "bad origin"))
+                  (else
+                   (make-http-response
+                    200
+                    '(("Content-Type" . "image/svg+xml")
+                      ("Cache-Control" . "private, max-age=3600"))
+                    (qr->svg (qr-encode (string-append origin (url (string-append "/decks/" id "/remote"))))
+                             8 4))))))))
+
         (route! "GET" "/api/decks/:id/events"
           (api-signed-in
             (lambda (req params user)
@@ -843,18 +916,21 @@ Description: Builds the app's request handler. settings is an alist:
 
         (route! "GET" "/login"
           (lambda (req params)
-            (if (session-user auth req)
-                (redirect "/")
-                (html-response (login-page #f)))))
+            (let ((next (safe-next (let ((p (assoc "next" (url-query-params (http-request-url req)))))
+                                     (and p (cdr p))))))
+              (if (session-user auth req)
+                  (redirect (or next "/"))
+                  (html-response (login-page #f next))))))
 
         (route! "POST" "/login"
           (lambda (req params)
             (let* ((form (http-request-form req))
+                   (next (safe-next (form-ref form "next" "")))
                    (user (sign-in auth (form-ref form "username" "")
                                   (form-ref form "password" ""))))
               (if user
-                  (redirect "/" (start-session auth user))
-                  (begin (penalty) (html-response (login-page #t)))))))
+                  (redirect (or next "/") (start-session auth user))
+                  (begin (penalty) (html-response (login-page #t next)))))))
 
         (route! "POST" "/logout"
           (lambda (req params) (redirect "/login" (end-session auth))))

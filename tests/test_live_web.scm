@@ -224,6 +224,33 @@
                                              `(("revision" . 1) ("doc" . ,doc)))))
           (test-equal 404 (status (send "GET" (string-append "/decks/" id) dave)))
 
+          ;; The remote's QR code: the remote's address as SVG, for the
+          ;; deck's users only and only with a plain origin.
+          (let* ((qr (lambda (origin who)
+                       (send "GET" (string-append "/decks/" id "/remote-qr.svg?origin=" origin) who)))
+                 (r (qr "https%3A%2F%2Ffolien.example.org" carol)))
+            (test-assert "the deck page offers it"
+              (has? (body (send "GET" (string-append "/decks/" id) carol))
+                    (string-append "data-remote-url=\"/decks/" id "/remote\"")))
+            (test-equal 200 (status r))
+            (test-equal "image/svg+xml" (http-response-header r "Content-Type"))
+            (test-assert (has? (body r) "<svg"))
+            (test-equal 200 (status (qr "http%3A%2F%2F192.168.1.20%3A8090" carol)))
+            (test-equal 404 (status (qr "https%3A%2F%2Ffolien.example.org" dave)))
+            (for-each (lambda (bad) (test-equal bad 400 (status (qr bad carol))))
+                      '("" "ftp%3A%2F%2Fx" "https%3A%2F%2Fx%2Fpath" "https%3A%2F%2Fuser%40x" "javascript%3Aalert(1)")))
+
+          ;; Signing in on a phone that scanned it: back to the remote.
+          (let ((remote (string-append "/decks/" id "/remote")))
+            (test-equal (string-append "/login?next=" (string-append "%2Fdecks%2F" id "%2Fremote"))
+                        (location (send "GET" remote #f)))
+            (test-equal remote
+                        (location (send "POST" "/login" #f
+                                        (string-append "username=carol&password=carolpassword&next="
+                                                       "%2Fdecks%2F" id "%2Fremote"))))
+            (test-equal "/" (location (send "POST" "/login" #f
+                                            "username=carol&password=carolpassword&next=%2F%2Fevil.example"))))
+
           ;; Save, then a stale save conflicts.
           (let* ((two-slides `(("format" . 1)
                                ("slides" . ,(vector (vector-ref (doc-slides doc) 0)
