@@ -15,6 +15,8 @@
 // Positions are absolute, so a message that arrives twice (directly and
 // through the server) does no harm.
 
+import { loadDesignFonts } from "./render.js";
+
 export class Sync {
   // opts: deckId, eventsUrl, onMessage(msg, via) with via "local" or
   // "remote", onConnection(connected), remote (default true): also use
@@ -141,10 +143,7 @@ export async function loadDeck(urls) {
   };
   const [deck, designs] = await Promise.all([get(urls.deckUrl), get(urls.designsUrl)]);
   const design = designs.find((d) => d.id === deck.design);
-  await Promise.all([
-    document.fonts.load("400 40px Inter"),
-    document.fonts.load("900 40px Inter"),
-  ]).catch(() => {});
+  await loadDesignFonts(design);
   return { deck, doc: deck.doc, design };
 }
 

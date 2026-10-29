@@ -1,9 +1,11 @@
 # folien
 
 A web application for creating, editing and presenting slide decks
-("Folien"), written in [dabscm](../dabscm). Two designs: our own ("Folien")
-and one after the corporate design of the canton of Zurich ("Kanton
-Zürich"). The interface is in German.
+("Folien"), written in [dabscm](../dabscm). Five designs: our own
+("Folien", and dark as "Folien Dunkel"), one after the corporate design of
+the canton of Zurich ("Kanton Zürich"), and a plain one in Roboto Slab for
+technical and conference talks ("Slab", "Slab Dunkel"). The interface is
+in German.
 
 Built from `dabscm/examples/starter-admin`: PostgreSQL with migrations,
 users and roles, signed-cookie sessions, strict CSP (no inline scripts or
@@ -75,8 +77,8 @@ static/js/editor.js   the editor; richtext-*.js its text editing, doc-ops.js
 static/js/present.js  presenting: player.js (transitions, builds), deck-nav.js,
                       presenter.js, remote.js, sync.js (windows in step)
 migrations/           NNNN_*.sql, applied in order at startup
-static/               CSS, fonts (Inter, SIL OFL), favicon; js/render.js draws
-                      slides (shared by viewer, editor, player), js/viewer.js
+static/               CSS, fonts (Inter, SIL OFL; Roboto Slab, Apache 2.0),
+                      favicon; js/render.js draws slides (shared by viewer, editor, player), js/viewer.js
 tests/                test_pure_*.scm (no database), test_live_web.scm
 deploy/               systemd units, health probe, nginx example, install script
 ```
@@ -114,8 +116,8 @@ Needs dabscm 2.7.1 or later.
 
 `GET /decks/<id>/export.pdf?per-page=1|2|4&notes=0|1&builds=final|steps`
 (the form on the deck page). The PDF is drawn natively with `(scm pdf)`
-from the same document model the browser renders: Inter with the same
-OpenType features, written as TrueType by `(scm truetype)` and embedded
+from the same document model the browser renders: the design's family
+(Inter with the same OpenType features, or Roboto Slab), written as TrueType by `(scm truetype)` and embedded
 (subset), kerned; text broken into lines by `(scm text layout)` with the
 browser's rules, so line breaks match the screen; real, selectable text
 with clickable web links. Images are embedded once each (PNG, JPEG, SVG
@@ -132,8 +134,9 @@ numbering, links), tables, shapes, lines, pictures (fitted or cropped as on the
 slide), MP4 videos with their poster (other videos as the poster), the
 layouts' decorations, slide backgrounds, transitions, builds as
 animations (zoom becomes fade) and notes. Hidden slides are left out. The
-text is in Inter (bold where the web uses Inter Black): exact where
-Inter is installed, a similar font otherwise.
+text is in the design's family, Inter or Roboto Slab (bold where the web
+uses Inter Black): exact where the font is installed, a similar font
+otherwise.
 
 ## Bundles
 
@@ -234,6 +237,14 @@ Regular and Black, black on white, accent blue `#0070B4`. The canton's
 logo is **not** included; it needs the official file and permission to use
 it. The slide layouts should be checked against the canton's official
 presentation template.
+
+## Slab designs
+
+"Slab" and "Slab Dunkel" set Roboto Slab (Regular and Bold, 2.002, from
+<https://github.com/googlefonts/robotoslab>; `static/fonts/RobotoSlab-*`
+and `(scm fonts roboto-slab)` for the PDF). Roboto Slab has no arrows and
+only some superscript digits: the browser draws those in a fallback font,
+the PDF as "?". Its ligatures are off on screen, as in the PDF.
 
 ## Maintenance and backups
 

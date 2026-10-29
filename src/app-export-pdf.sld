@@ -4,9 +4,10 @@
 ;; layouts and design tokens, text broken into lines as the browser does
 ;; it ((scm text layout) with the same rules: pre-wrap, CSS line boxes,
 ;; the renderer's paragraph spacing and list indents), in the same glyphs
-;; (Inter from (scm fonts inter), OpenType features applied, written as
-;; TrueType and embedded), kerned. Bold and heading text use Inter
-;; Black, italics are slanted. Text is real text: selectable, searchable,
+;; (the design's family from (scm fonts inter) or (scm fonts roboto-slab),
+;; written as TrueType and embedded), kerned. Bold and heading text use
+;; the family's heavy face (Inter Black, Roboto Slab Bold), italics are
+;; slanted. Text is real text: selectable, searchable,
 ;; web links clickable.
 ;;
 ;; Layouts: 1, 2 or 4 slides per page, with or without the notes. One
@@ -27,6 +28,7 @@
           (scm pdf)
           (scm truetype)
           (scm fonts inter)
+          (scm fonts roboto-slab)
           (scm text layout)
           (scm svg raster)
           (only (scm raster) canvas-width canvas->png)
@@ -42,27 +44,51 @@
     (define SLIDE-H 1080)
 
     ;; --- fonts --------------------------------------------------------
-    ;; The TrueType files are made once per process.
+    ;; The families the designs name: per family its regular and heavy
+    ;; font, as (font PostScript-name style).
 
-    (define ttf-cache #f)
-    (define (ttf-files)
-      (unless ttf-cache
-        (set! ttf-cache (cons (font->truetype inter-regular "Inter")
-                              (font->truetype inter-black "Inter" "Black"))))
-      ttf-cache)
+    (define families
+      `(("Inter" (,inter-regular "Inter" "Regular") (,inter-black "Inter-Black" "Black"))
+        ("Roboto Slab" (,roboto-slab-regular "RobotoSlab-Regular" "Regular")
+                       (,roboto-slab-bold "RobotoSlab-Bold" "Bold"))))
+
+    (define (family-of design)
+      (let* ((body (jr (design-ref design "fonts") "body"))
+             (f (assoc (or (and body (jr body "family")) "Inter") families)))
+        (if f f (car families))))
+
+    ;; The TrueType files are made once per process and font.
+    (define ttf-cache '())
+    (define (ttf-file family spec)
+      (let ((hit (assq (car spec) ttf-cache)))
+        (if hit
+            (cdr hit)
+            (let ((ttf (font->truetype (car spec) (car family) (caddr spec))))
+              (set! ttf-cache (cons (cons (car spec) ttf) ttf-cache))
+              ttf))))
 
     (define (kerning-of tt)
       (let ((k (/ 1000.0 (font-units-per-em tt))))
         (lambda (a b) (* k (font-kerning tt a b)))))
 
-    (define regular-kerning (kerning-of inter-regular))
-    (define black-kerning (kerning-of inter-black))
+    ;; A font as text is drawn with it: the embedded PDF font, its kerning
+    ;; and its extent above and below the baseline, per size unit.
+    (define-record-type face
+      (make-face font kern ascent descent)
+      face?
+      (font face-font)
+      (kern face-kern)
+      (ascent face-ascent)
+      (descent face-descent))
 
-    ;; Inter's extent above and below the baseline, per size unit.
-    (define ascent-factor (/ (font-ascent inter-regular) (font-units-per-em inter-regular)))
-    (define descent-factor (/ (- (font-descent inter-regular)) (font-units-per-em inter-regular)))
+    (define (embed-face pdf family spec)
+      (let ((tt (car spec)))
+        (make-face (pdf-embed-truetype-font pdf (ttf-file family spec) (cadr spec))
+                   (kerning-of tt)
+                   (/ (font-ascent tt) (font-units-per-em tt))
+                   (/ (- (font-descent tt)) (font-units-per-em tt)))))
 
-    ;; Everything a drawing needs.
+    ;; Everything a drawing needs. regular and black are faces.
     (define-record-type ctx
       (make-ctx pdf regular black design data-dir images doc today)
       ctx?
@@ -127,12 +153,13 @@
 
     ;; A text run for the layout: its data is an alist the drawing reads.
     (define (make-run ctx text black? size color italic? underline? link)
-      (let* ((font (if black? (ctx-black ctx) (ctx-regular ctx)))
-             (kern (if black? black-kerning regular-kerning)))
+      (let* ((face (if black? (ctx-black ctx) (ctx-regular ctx)))
+             (font (face-font face))
+             (kern (face-kern face)))
         (make-text-run text
                        (lambda (s) (pdf-text-width font size s kern))
-                       size (* ascent-factor size) (* descent-factor size)
-                       `((font . ,font) (kern . ,kern) (size . ,size) (color . ,color)
+                       size (* (face-ascent face) size) (* (face-descent face) size)
+                       `((font . ,font) (kern . ,kern) (face . ,face) (size . ,size) (color . ,color)
                          (italic . ,italic?) (underline . ,underline?) (link . ,link)))))
 
     (define (rdata run key) (cdr (assq key (text-run-data run))))
@@ -246,8 +273,9 @@
         (let ((link (rdata run 'link)))
           (when (and link link-box (pair? width) (web-link? link))
             (pdf-add-link page
-                          (link-box x (- baseline (* descent-factor size))
-                                    (+ x (car width)) (+ baseline (* ascent-factor size)))
+                          (link-box x (- baseline (* (face-descent (rdata run 'face)) size))
+                                    (+ x (car width))
+                                    (+ baseline (* (face-ascent (rdata run 'face)) size)))
                           link)))))
 
     (define (web-link? s)
@@ -600,12 +628,13 @@
 
     (define (small-text ctx page x y text . align)
       (let* ((size 8)
-             (w (pdf-text-width (ctx-regular ctx) size text regular-kerning))
+             (face (ctx-regular ctx))
+             (w (pdf-text-width (face-font face) size text (face-kern face)))
              (x (if (and (pair? align) (eq? (car align) 'right)) (- x w) x)))
         (pdf-with-state page
           (lambda ()
             (pdf-set-fill-gray page 0.35)
-            (pdf-draw-text page (ctx-regular ctx) size x y text 'kerning regular-kerning)))))
+            (pdf-draw-text page (face-font face) size x y text 'kerning (face-kern face))))))
 
     ;; The pages to draw: (slide . max-order) per page of slides.
     (define (frames doc steps?)
@@ -634,11 +663,12 @@ Description: The deck document as a PDF (bytevector). options is an
              (notes? (opt 'notes #f))
              (steps? (eq? (opt 'builds 'final) 'steps))
              (pdf (make-pdf))
-             (ttf (ttf-files))
+             (design (find-design design-id))
+             (family (family-of design))
              (ctx (make-ctx pdf
-                            (pdf-embed-truetype-font pdf (car ttf) "Inter")
-                            (pdf-embed-truetype-font pdf (cdr ttf) "Inter-Black")
-                            (find-design design-id)
+                            (embed-face pdf family (cadr family))
+                            (embed-face pdf family (caddr family))
+                            design
                             data-dir
                             (make-hash-table equal?)
                             doc

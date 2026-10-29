@@ -37,6 +37,21 @@ function fontOf(design, token) {
   return design.fonts[token] || design.fonts.body;
 }
 
+// Per family the OpenType features that differ from the slide's (Inter's,
+// in slides.css): the PDF export sets Roboto Slab without ligatures.
+const FAMILY_FEATURES = { "Roboto Slab": '"liga" 0' };
+
+// Resolves when the design's fonts are loaded (bold runs included), so a
+// first paint has the right line breaks.
+export function loadDesignFonts(design) {
+  const specs = new Set();
+  for (const f of Object.values((design && design.fonts) || {})) {
+    specs.add(`${f.weight} 40px "${f.family}"`);
+    specs.add(`900 40px "${f.family}"`);
+  }
+  return Promise.all([...specs].map((s) => document.fonts.load(s))).catch(() => {});
+}
+
 // The geometry and style an element is drawn with: its own, over those of
 // its layout placeholder when it is one.
 export function resolveElement(layout, el) {
@@ -147,7 +162,8 @@ export function renderRichText(target, text, base, design, ctx) {
     if (!any) p.appendChild(document.createElement("br"));
     target.appendChild(p);
   }
-  target.style.fontFamily = font.family + ", Arial, Helvetica, sans-serif";
+  target.style.fontFamily = `"${font.family}", Arial, Helvetica, sans-serif`;
+  if (FAMILY_FEATURES[font.family]) target.style.fontFeatureSettings = FAMILY_FEATURES[font.family];
   target.style.fontWeight = String(font.weight);
   target.style.fontSize = base.size + "px";
   target.style.lineHeight = String(settings.lineHeight);

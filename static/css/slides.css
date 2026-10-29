@@ -1,8 +1,8 @@
 /* Slides as drawn by static/js/render.js: a 1920 x 1080 box of absolutely
-   positioned elements, scaled into a .slide-frame. Inter is the type of
-   both designs; the same OpenType features as the Inter of (scm fonts
-   inter), which the PDF export uses, so screen and PDF set the same
-   glyphs. */
+   positioned elements, scaled into a .slide-frame. The designs set Inter
+   or Roboto Slab; Inter with the same OpenType features as the Inter of
+   (scm fonts inter), which the PDF export uses, so screen and PDF set the
+   same glyphs (render.js switches Roboto Slab's ligatures off). */
 
 @font-face {
   font-family: "Inter";
@@ -17,6 +17,21 @@
   font-weight: 900;
   font-display: block;
   src: url("../fonts/Inter-Black.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Roboto Slab";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../fonts/RobotoSlab-Regular.woff2") format("woff2");
+}
+/* Bold runs ask for 900 in every design. */
+@font-face {
+  font-family: "Roboto Slab";
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: block;
+  src: url("../fonts/RobotoSlab-Bold.woff2") format("woff2");
 }
 
 .slide-frame {

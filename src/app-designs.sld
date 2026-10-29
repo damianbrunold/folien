@@ -77,6 +77,18 @@
         ("light"      . "#eef2ff")
         ("on-accent"  . "#ffffff")))
 
+    ;; "folien-dark": the same layouts on slate. Accents are bright there, so
+    ;; text on them is dark.
+    (define folien-dark-colors
+      '(("background" . "#0f172a")
+        ("text"       . "#e5e7eb")
+        ("muted"      . "#94a3b8")
+        ("accent"     . "#60a5fa")
+        ("accent2"    . "#2dd4bf")
+        ("accent3"    . "#fb923c")
+        ("light"      . "#1e293b")
+        ("on-accent"  . "#0f172a")))
+
     (define folien-fonts
       '(("heading" . (("family" . "Inter") ("weight" . 900)))
         ("body"    . (("family" . "Inter") ("weight" . 400)))))
@@ -205,13 +217,100 @@
            (box 120 90 1680 150) (text-style "heading" 68 "text" "left" "bottom")))
        (layout "blank" "Leer" '())))
 
+    ;; --- designs "slab" and "slab-dark": for talks ---------------------
+    ;; Roboto Slab, for technical and conference talks: plain, a ruler
+    ;; under the title (a hairline with a short accent mark at its start),
+    ;; "›" bullets, one warm accent. Light on paper white, dark on a
+    ;; terminal black; the layouts are the same, only the hairline's colour
+    ;; (rule) differs.
+
+    (define slab-colors
+      '(("background" . "#fbfaf7")
+        ("text"       . "#1c1f24")
+        ("muted"      . "#5f6672")
+        ("accent"     . "#d03f22")
+        ("accent2"    . "#1a64d6")
+        ("accent3"    . "#8250df")
+        ("light"      . "#ebe8e0")
+        ("on-accent"  . "#ffffff")))
+
+    (define slab-dark-colors
+      '(("background" . "#15171c")
+        ("text"       . "#e8e4da")
+        ("muted"      . "#949dab")
+        ("accent"     . "#ff7a59")
+        ("accent2"    . "#6cb6ff")
+        ("accent3"    . "#c4a5ff")
+        ("light"      . "#262a31")
+        ("on-accent"  . "#15171c")))
+
+    (define slab-fonts
+      '(("heading" . (("family" . "Roboto Slab") ("weight" . 700)))
+        ("body"    . (("family" . "Roboto Slab") ("weight" . 400)))))
+
+    ;; The ruler at y, from the left margin across the slide.
+    (define (slab-ruler y rule)
+      (list (rect (box 120 y 1680 2) rule)
+            (rect (box 120 (- y 2) 96 6) "accent")))
+
+    (define (slab-layouts rule)
+      (let ((ruler (slab-ruler 252 rule))
+            (title (placeholder "title" "Titel"
+                     (box 120 80 1680 150) (text-style "heading" 64 "text" "left" "bottom"))))
+        (vector
+         (layout "title" "Titelfolie"
+           (cons (rect (box 120 140 28 28) "accent") (slab-ruler 652 rule))
+           (placeholder "title" "Titel"
+             (box 120 280 1680 330) (text-style "heading" 96 "text" "left" "bottom"))
+           (placeholder "subtitle" "Untertitel"
+             (box 120 700 1680 200) (text-style "body" 44 "muted" "left" "top")))
+         (layout "title-content" "Titel und Inhalt"
+           ruler
+           title
+           (placeholder "body" "Text"
+             (box 120 300 1680 680) (text-style "body" 40 "text" "left" "top")))
+         (layout "two-columns" "Zwei Spalten"
+           (cons (rect (box 959 300 2 680) rule) ruler)
+           title
+           (placeholder "left" "Linke Spalte"
+             (box 120 300 790 680) (text-style "body" 38 "text" "left" "top"))
+           (placeholder "right" "Rechte Spalte"
+             (box 1010 300 790 680) (text-style "body" 38 "text" "left" "top")))
+         (with-footer-color "on-accent"
+          (layout "section" "Kapitel"
+           (list (rect (box 0 0 1920 1080) "accent")
+                 (rect (box 120 300 28 28) "on-accent"))
+           (placeholder "title" "Kapiteltitel"
+             (box 120 380 1680 220) (text-style "heading" 96 "on-accent" "left" "bottom"))
+           (placeholder "subtitle" "Untertitel"
+             (box 120 620 1680 160) (text-style "body" 44 "on-accent" "left" "top"))))
+         (layout "image-caption" "Bild mit Legende"
+           ruler
+           title
+           (placeholder "image" "Bild"
+             (box 120 300 1100 690) (text-style "body" 32 "muted" "center" "middle"))
+           (placeholder "body" "Legende"
+             (box 1280 300 520 690) (text-style "body" 34 "text" "left" "top")))
+         (layout "quote" "Zitat"
+           (list (rect (box 120 280 8 360) "accent"))
+           (placeholder "body" "Zitat"
+             (box 180 280 1560 360) (text-style "heading" 64 "text" "left" "middle"))
+           (placeholder "subtitle" "Quelle"
+             (box 180 680 1560 120) (text-style "body" 38 "muted" "left" "top")))
+         (layout "title-only" "Nur Titel"
+           ruler
+           title)
+         (layout "blank" "Leer" '()))))
+
     ;; --- registry -----------------------------------------------------
 
     ;; Text settings: the bullet character of lists, line height (times
     ;; the font size) and the space after a paragraph (times the font
     ;; size). The canton allows only dash lists ("Nur Strichlisten").
-    (define (text-settings bullet)
-      `(("bullet" . ,bullet) ("lineHeight" . 1.2) ("paraSpacing" . 0.35)))
+    (define (text-settings bullet . line-height)
+      `(("bullet" . ,bullet)
+        ("lineHeight" . ,(if (pair? line-height) (car line-height) 1.2))
+        ("paraSpacing" . 0.35)))
 
     (define (make-design id name colors fonts text footer layouts)
       `(("id" . ,id)
@@ -226,8 +325,16 @@
     (define designs
       (list (make-design "folien" "Folien" folien-colors folien-fonts
                          (text-settings "•") (footer-boxes 120 1006 26) folien-layouts)
+            (make-design "folien-dark" "Folien Dunkel" folien-dark-colors folien-fonts
+                         (text-settings "•") (footer-boxes 120 1006 26) folien-layouts)
             (make-design "zh" "Kanton Zürich" zh-colors zh-fonts
-                         (text-settings "–") (footer-boxes 120 1006 26) zh-layouts)))
+                         (text-settings "–") (footer-boxes 120 1006 26) zh-layouts)
+            (make-design "slab" "Slab" slab-colors slab-fonts
+                         (text-settings "›" 1.25) (footer-boxes 120 1006 24)
+                         (slab-layouts "#d9d5ca"))
+            (make-design "slab-dark" "Slab Dunkel" slab-dark-colors slab-fonts
+                         (text-settings "›" 1.25) (footer-boxes 120 1006 24)
+                         (slab-layouts "#3a3f48"))))
 
     (define (design-ref design key)
       (cdr (assoc key design)))

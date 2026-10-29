@@ -34,7 +34,7 @@
   (with-slide doc (put (first-slide doc) "elements" (vector el))))
 
 (test-group "designs"
-  (test-equal '("folien" "zh") (design-ids))
+  (test-equal '("folien" "folien-dark" "zh" "slab" "slab-dark") (design-ids))
   (test-assert (find-design "zh"))
   (test-equal #f (find-design "nope"))
   (for-each
@@ -43,10 +43,10 @@
        (test-assert (string-append id " has a title layout") (find-layout d "title"))
        (test-assert (string-append id " has a blank layout") (find-layout d "blank"))))
    (design-ids))
-  ;; Both designs offer the same layouts, so a deck can switch designs.
+  ;; All designs offer the same layouts, so a deck can switch designs.
   (let ((ids (lambda (d) (map (lambda (l) (jref l "id"))
                               (vector->list (jref (find-design d) "layouts"))))))
-    (test-equal (ids "folien") (ids "zh")))
+    (for-each (lambda (d) (test-equal d (ids "folien") (ids d))) (design-ids)))
   (test-assert "designs serialize" (string? (json->string (list->vector designs)))))
 
 ;; WCAG 2 contrast: text in each design stays readable (AA: 4.5:1 for

@@ -173,6 +173,22 @@
           (test-equal 4 (count-of (apply string-append names) "ppt/media/")))))
     (delete-file file)))
 
+(test-group "a design in Roboto Slab"
+  (let ((s (text-of (deck->pdf doc "slab-dark" "Slab" data-dir '()))))
+    (test-assert "Roboto Slab embedded" (has? s "+RobotoSlab-Regular"))
+    (test-assert "its bold" (has? s "+RobotoSlab-Bold"))
+    (test-assert "no Inter" (not (has? s "+Inter"))))
+  (let ((file (string-append data-dir "/s.pptx")))
+    (let ((p (open-binary-output-file file)))
+      (write-bytevector (deck->pptx doc "slab" "Slab" data-dir) p)
+      (close-port p))
+    (call-with-input-zip file
+      (lambda (z)
+        (let ((s1 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide1.xml"))))
+          (test-assert (has? s1 "typeface=\"Roboto Slab\""))
+          (test-assert "no Inter" (not (has? s1 "typeface=\"Inter\""))))))
+    (delete-file file)))
+
 (test-group "footer fields"
   (let* ((footed `(("footer" . (("text" . "Fusszeile") ("number" . #t) ("date" . "fixed")
                                 ("dateText" . "1. Mai")))

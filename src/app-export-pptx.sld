@@ -10,10 +10,10 @@
 ;; PowerPoint transitions and animations, notes the slide notes. Hidden
 ;; slides are left out.
 ;;
-;; The text is set in Inter, headings and bold runs bold (Inter's bold,
-;; where the web shows Inter Black): PowerPoint shows it as designed where
-;; Inter is installed, otherwise it substitutes a similar font, and line
-;; breaks may then differ.
+;; The text is set in the design's family (Inter or Roboto Slab), headings
+;; and bold runs bold (Inter's bold where the web shows Inter Black):
+;; PowerPoint shows it as designed where the font is installed, otherwise
+;; it substitutes a similar font, and line breaks may then differ.
 
 (define-library (app export-pptx)
   (import (scheme base)
@@ -35,9 +35,17 @@
     (define (emu x) (exact (round (* x EMU))))
     (define (pt px) (/ px 2))            ; slide units to points
 
-    ;; Inter's line height (ascent + descent) per em: PowerPoint's single
-    ;; spacing; CSS line-height 1.2 is that times 1.2 / this.
-    (define inter-line 1.2099609375)
+    ;; Per family its line height (ascent + descent) per em: PowerPoint's
+    ;; single spacing; CSS line-height 1.2 is that times 1.2 / this.
+    (define family-lines
+      '(("Inter" . 1.2099609375)
+        ("Roboto Slab" . 1.31884765625)))
+
+    ;; The design's family and its line height.
+    (define (family-of design)
+      (let* ((body (jr (design-ref design "fonts") "body"))
+             (f (assoc (or (and body (jr body "family")) "Inter") family-lines)))
+        (if f f (car family-lines))))
 
     (define (jr obj key . d) (apply jref obj key d))
 
@@ -93,6 +101,7 @@
              (base-size (or (jr base "size") 40))
              (base-black? (heading-font? design (jr base "font")))
              (base-color (hex design (or (jr base "color") "text")))
+             (family (family-of design))
              (base-align (string->symbol (or (jr base "align") "left")))
              (paras (vector->list (jr text "paragraphs" #())))
              (n (length paras)))
@@ -115,18 +124,18 @@
                                `((margin-left . ,(emu (* (+ level 1) 1.1 first-size)))
                                  (indent . ,(- (emu (* 1.1 first-size)))))
                                '())
-                         (line-spacing . ,(/ lh inter-line))
+                         (line-spacing . ,(/ lh (cdr family)))
                          (space-after . ,(if (< i (- n 1)) (pt (* spacing first-size)) 0))
                          (runs
                           . ,(if (null? runs)
                                  (list `((text . "") (size . ,(pt base-size))
-                                         (font . "Inter") (bold . ,base-black?)))
+                                         (font . ,(car family)) (bold . ,base-black?)))
                                  (map (lambda (r)
                                         (let ((black? (or base-black? (eq? (jr r "b") #t)))
                                               (link (jr r "link")))
                                           `((text . ,(jr r "text"))
                                             (size . ,(pt (or (jr r "size") base-size)))
-                                            (font . "Inter")
+                                            (font . ,(car family))
                                             (bold . ,black?)
                                             (italic . ,(eq? (jr r "i") #t))
                                             (underline . ,(or (eq? (jr r "u") #t) (and link #t)))

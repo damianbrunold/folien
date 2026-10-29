@@ -5,16 +5,12 @@
 // src/app-jsbundle.sld, since browsers do not load modules from files.
 
 import { startPresentation } from "./present-app.js";
+import { loadDesignFonts } from "./render.js";
 
 const root = document.getElementById("present");
 const data = window.FOLIEN_BUNDLE;
 
-Promise.all([
-  document.fonts.load("400 40px Inter"),
-  document.fonts.load("900 40px Inter"),
-])
-  .catch(() => {})
-  .then(() =>
+loadDesignFonts(data.design).then(() =>
     startPresentation(root, {
       deck: data.deck,
       doc: data.doc,

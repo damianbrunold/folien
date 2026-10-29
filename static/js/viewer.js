@@ -7,6 +7,7 @@
 import {
   designMap,
   fitInto,
+  loadDesignFonts,
   renderSlide,
   renderNotes,
 } from "./render.js";
@@ -97,10 +98,7 @@ async function main() {
   const fromHash = parseInt(location.hash.slice(1), 10);
   // Draw once the slide fonts are in, so the first paint has the right
   // line breaks.
-  await Promise.all([
-    document.fonts.load("400 40px Inter"),
-    document.fonts.load("900 40px Inter"),
-  ]).catch(() => {});
+  await loadDesignFonts(design);
   show(Number.isFinite(fromHash) ? fromHash - 1 : 0);
 }
 
