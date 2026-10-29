@@ -150,3 +150,19 @@ test("the remote steers both", async () => {
   await audience.waitFor("document.querySelector('.present-blank').classList.contains('black')", 5000);
   await shot(remote, "10-remote");
 });
+
+test("Esc ends the presentation: a window opened for it closes, else to the deck", async () => {
+  const opener = await browser.newTab(server.url + "/remote.html");
+  await opener.eval(`(() => { window.__w = window.open("/present.html#2", "_blank"); })()`);
+  await opener.waitFor("!!window.__w.document.querySelector('.player-layer .slide')", 5000);
+  await opener.eval(
+    "window.__w.document.dispatchEvent(new window.__w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))",
+  );
+  await opener.waitFor("window.__w.closed", 5000);
+
+  // started directly (no opener): Esc in the middle goes to the deck page
+  const direct = await browser.newTab(server.url + "/present.html#2");
+  await direct.waitFor("!!document.querySelector('.player-layer .slide')");
+  await direct.keys(Keys.escape);
+  await direct.waitFor("location.pathname === '/view.html'", 5000);
+});

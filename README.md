@@ -274,7 +274,9 @@ slide; while typing Ctrl+Enter goes to the next text field (after the
 last: a new slide), Ctrl+Shift+8/7 make lists, Ctrl+Shift+L/E/R/J align,
 Ctrl+Shift+. and , change the size, Ctrl+K links; Ctrl+M adds a slide,
 Ctrl+arrows in the slide list move it; F5, Shift+F5 and Alt+F5 present
-(from the start, from here, presenter console), also on the deck page.
+(from the start, from here, presenter console), also on the deck page;
+Esc ends a presentation (its window closes when the editor or the deck
+page opened it).
 The presentation list: arrows between the cards, `/` searches, `n`
 starts a new presentation. Browsers keep some keys for themselves
 (Firefox: Ctrl+Shift+J opens its console).

@@ -20,7 +20,9 @@ function el(tag, cls, text) {
 }
 
 // Presents doc in root. opts: deck ({id, title}), doc, design,
-// assetUrl(sha), exitUrl (where "Beenden" goes; none: no such button),
+// assetUrl(sha), exitUrl (where "Beenden" and Esc go, unless the window
+// was opened by the editor or the deck page: then it closes; none: no such
+// button),
 // eventsUrl (the server's event stream; none: no remote control).
 export function startPresentation(root, opts) {
   const { deck, doc, design, assetUrl } = opts;
@@ -28,8 +30,8 @@ export function startPresentation(root, opts) {
 
   const stage = el("div", "present-stage");
   const blank = el("div", "present-blank");
-  const end = el("div", "present-end", "Ende der Präsentation – Esc oder ← zurück");
-  const hint = el("div", "present-hint", "F Vollbild · ← → blättern · B schwarz · W weiss");
+  const end = el("div", "present-end", "Ende der Präsentation – Esc beendet, ← zurück");
+  const hint = el("div", "present-hint", "F Vollbild · ← → blättern · B schwarz · W weiss · Esc beenden");
   const controls = el("div", "present-controls");
   const btn = (label, title, f) => {
     const b = el("button", "present-btn", label);
@@ -49,9 +51,23 @@ export function startPresentation(root, opts) {
     counter,
     btn("›", "Weiter", () => step("next")),
     btn("⛶", "Vollbild (F)", toggleFullscreen),
-    opts.exitUrl ? btn("✕", "Beenden", () => (location.href = opts.exitUrl)) : el("span"),
+    opts.exitUrl ? btn("✕", "Beenden (Esc)", exit) : el("span"),
   );
   root.replaceChildren(stage, blank, end, controls, hint);
+
+  // Ends the presentation: a window the editor or the deck page opened
+  // closes (back to where it was started), else to exitUrl.
+  function exit() {
+    const leave = () => {
+      if (opts.exitUrl) location.href = opts.exitUrl;
+    };
+    if (!window.opener) return leave();
+    window.close();
+    // a browser that refuses to close it: leave as without an opener
+    setTimeout(() => {
+      if (!window.closed) leave();
+    }, 300);
+  }
   setTimeout(() => hint.classList.add("gone"), 3500);
 
   const byId = new Map(doc.slides.map((s, i) => [s.id, i]));
@@ -149,7 +165,7 @@ export function startPresentation(root, opts) {
       [
         ...PRESENT_KEYS,
         ["F", "Vollbild ein / aus"],
-        ["Esc", "Am Ende: die Präsentation verlassen"],
+        ["Esc", "Präsentation beenden (im Vollbild: zuerst Vollbild verlassen)"],
         ["? / F1", "Diese Hilfe"],
       ],
     ],
@@ -172,8 +188,9 @@ export function startPresentation(root, opts) {
     digits = "";
     // Enter and Space on a focused control press it.
     if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("button")) return;
-    if (e.key === "Escape" && atEnd && opts.exitUrl) {
-      location.href = opts.exitUrl;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      exit();
       return;
     }
     const what = presentKey(e);
