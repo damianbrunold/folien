@@ -45,6 +45,8 @@ Implemented step by step, phase by phase:
       must decode and are measured by the server; thumbnails load
       downscaled copies (`?w=320|640|1280`, cached); PDF and PowerPoint
       embed photos upright (EXIF) and no larger than the slide shows
+- [x] Publishing: frozen copies at stable public addresses (`/p/<name>`),
+      many per deck; offline export as one HTML file or a folder zip
 
 ## Layout
 
@@ -68,8 +70,9 @@ src/app-assets.sld    uploaded images and videos (content-addressed files)
 src/app-images.sld    image checks, thumbnail copies, export copies ((scm image))
 src/app-export-pdf.sld  the deck as PDF, natively with (scm pdf)
 src/app-export-pptx.sld the deck as PowerPoint file, with (scm ooxml presentation)
-src/app-bundle.sld    the deck as zip bundle and back; app-jsbundle.sld builds
-                      the offline player's script
+src/app-bundle.sld    the deck as zip bundle and back, the offline player
+                      (also on its own); app-jsbundle.sld builds its script
+src/app-publish.sld   publications: frozen public copies of a deck
 src/app-views.sld     HTML rendering
 src/app-web.sld       routes, JSON API and middleware: make-app
 static/js/render.js   draws slides (viewer, editor, later player and exports)
@@ -150,6 +153,52 @@ the app's modules turned into one classic script by
 `src/app-jsbundle.sld`, since browsers do not load modules from files)
 and `LIESMICH.txt`. Bundles are cached per deck version in
 `data-dir/bundles` for a day.
+
+## Offline
+
+To present without a network, the overview's export section offers the
+offline player on its own, without notes and hidden slides:
+
+- `GET /decks/<id>/export.html`: one HTML file with everything in it
+  (script, styles, the design's fonts as data URLs, their licences, the
+  images and videos as base64 blocks that `static/js/offline.js` turns
+  into blob URLs). Copy it anywhere and double-click it.
+- `GET /decks/<id>/export-offline.zip`: the player's folder (`index.html`,
+  `assets/`, `fonts/`, ...), better for large videos, which make the one
+  file big and slow to open.
+
+Both are cached like bundles. The player has no presenter console or
+remote.
+
+## Publishing
+
+"Veröffentlichen" on the overview (the owner, a deck not in the trash)
+makes a frozen copy that anyone with the address may see, present and
+download as PDF, without signing in: title, design, and the document
+without notes and hidden slides; an automatic footer date is fixed to the
+day of publishing. Later changes to the deck do not touch it. Publishing
+again makes another copy and leaves the earlier ones alone (a talk given
+twice, with changes in between); "Zurückziehen" ends one. Optionally each
+has a label ("Anlass").
+
+```
+/p/<name>                   the deck's newest publication
+/p/<name>/<stamp>           one of them, for good ("2026-10-29", "2026-10-29-2")
+/p/<name>/<stamp>/present   presenting it (no remote, no console)
+/p/<name>/<stamp>/folien.pdf
+```
+
+name is the deck's public token (16 random characters, made at the first
+publication, never changed) or a readable name the owner sets ("Name in
+der Adresse": lower-case letters, digits, hyphens; unique across decks).
+Both work; renaming changes only the readable addresses. Publications are
+kept in `publications` (migration 0008) with their own copy of the
+document; images and videos are content-addressed files, so a copy only
+links the ones it shows (`publication_assets`, the only ones served under
+its address) and shares the files with the deck and the other copies.
+The nightly clean-up keeps an asset while a publication links it. A
+deck in the trash shows none of its publications (restoring it brings
+them back); deleting it deletes them.
 
 "Aus ZIP importieren" on the presentations page (`POST /api/import`, the
 zip as body) makes a new deck from a bundle. Nothing in an uploaded

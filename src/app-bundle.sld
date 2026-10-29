@@ -17,6 +17,13 @@
 ;; names (no path in the archive is ever used as a file name), sizes are
 ;; checked before and while unpacking, every asset must hash to its name
 ;; and be a type folien accepts, the document must validate.
+;;
+;; The offline player also comes on its own, without notes and hidden
+;; slides, for presenting without a network: as one HTML file with
+;; everything in it (write-offline-html!; its images and videos are
+;; turned into blob URLs when it opens), or as a zip of the player's
+;; folder with the files beside it (write-offline-zip!: better for large
+;; videos).
 
 (define-library (app bundle)
   (import (scheme base)
@@ -28,6 +35,7 @@
           (scm datetime)
           (scheme time)
           (scm json simple)
+          (scm string)
           (app db)
           (app users)            ; col
           (app designs)
@@ -39,7 +47,10 @@
           (app jsbundle))
   (export bundle-version
           write-bundle!
+          write-offline-zip!
+          write-offline-html!
           player-entries
+          write-player-html
           import-bundle!
           bundle-error?
           bundle-error-message
@@ -140,15 +151,17 @@ Description: The asset hashes the document's elements refer to (asset
        "In Folien lässt sich das ganze Archiv wieder importieren\n"
        "(Präsentationen → Importieren); es entsteht eine neue Präsentation.\n"))
 
-    (define (player-entries static-dir deck-id title design-id doc asset-urls)
-      "Syntax: (player-entries static-dir deck-id title design-id doc asset-urls)
+    (define (player-entries static-dir deck-id title design-id doc asset-urls . prefix)
+      "Syntax: (player-entries static-dir deck-id title design-id doc asset-urls [prefix])
 Library: (app bundle)
 Description: The files of the offline player: a list of (name text . s)
-  or (name file . path), names relative to the bundle. asset-urls maps
-  asset hashes to URLs relative to player/index.html."
+  or (name file . path), names relative to the bundle: prefix (default
+  \"player/\") and the player's own. asset-urls maps asset hashes to URLs
+  relative to <prefix>index.html."
+      (define dir (if (pair? prefix) (car prefix) "player/"))
       (append
-       (list (cons "player/index.html" (cons 'text (player-html title)))
-             (cons "player/deck-data.js"
+       (list (cons (string-append dir "index.html") (cons 'text (player-html title)))
+             (cons (string-append dir "deck-data.js")
                    (cons 'text (string-append
                                 "window.FOLIEN_BUNDLE = "
                                 (json->string
@@ -157,12 +170,12 @@ Description: The files of the offline player: a list of (name text . s)
                                    ("design" . ,(find-design design-id))
                                    ("assets" . ,asset-urls)))
                                 ";\n")))
-             (cons "player/folien-player.js"
+             (cons (string-append dir "folien-player.js")
                    (cons 'text (bundle-modules (string-append static-dir "/js") player-modules))))
-       (map (lambda (css) (cons (string-append "player/css/" css)
+       (map (lambda (css) (cons (string-append dir "css/" css)
                                 (cons 'file (string-append static-dir "/css/" css))))
             '("slides.css" "present.css"))
-       (map (lambda (font) (cons (string-append "player/fonts/" font)
+       (map (lambda (font) (cons (string-append dir "fonts/" font)
                                  (cons 'file (string-append static-dir "/fonts/" font))))
             (font-files (find-design design-id)))))
 
@@ -177,6 +190,25 @@ Description: The files of the offline player: a list of (name text . s)
              '("Inter-Regular.woff2" "Inter-Black.woff2" "Inter-LICENSE.txt"))
          '("JetBrainsMono-Regular.woff2" "JetBrainsMono-Bold.woff2" "JetBrainsMono-LICENSE.txt"))))
 
+    ;; The asset rows (list-deck-assets) of the deck's assets that doc
+    ;; refers to and that are there.
+    (define (doc-asset-rows db data-dir deck-id doc)
+      (let ((linked (list-deck-assets db deck-id)))
+        (let loop ((shas (referenced-assets doc)) (acc '()))
+          (if (null? shas)
+              (reverse acc)
+              (let ((row (let find ((ls linked))
+                           (cond ((null? ls) #f)
+                                 ((equal? (col (car ls) "sha256") (car shas)) (car ls))
+                                 (else (find (cdr ls)))))))
+                (loop (cdr shas)
+                      (if (and row (file-exists? (asset-file data-dir (car shas))))
+                          (cons row acc)
+                          acc)))))))
+
+    (define (asset-path row)
+      (string-append "assets/" (col row "sha256") "." (mime-extension (col row "mime"))))
+
     (define (write-bundle! db data-dir static-dir deck out-path)
       "Syntax: (write-bundle! db data-dir static-dir deck out-path)
 Library: (app bundle)
@@ -186,20 +218,7 @@ Description: Writes the bundle of deck (a row from load-deck) to the
              (title (col deck "title"))
              (design-id (col deck "design"))
              (doc (deck-doc deck))
-             (linked (list-deck-assets db id))
-             (rows (let loop ((shas (referenced-assets doc)) (acc '()))
-                     (if (null? shas)
-                         (reverse acc)
-                         (let ((row (let find ((ls linked))
-                                      (cond ((null? ls) #f)
-                                            ((equal? (col (car ls) "sha256") (car shas)) (car ls))
-                                            (else (find (cdr ls)))))))
-                           (loop (cdr shas)
-                                 (if (and row (file-exists? (asset-file data-dir (car shas))))
-                                     (cons row acc)
-                                     acc))))))
-             (asset-path (lambda (row)
-                           (string-append "assets/" (col row "sha256") "." (mime-extension (col row "mime")))))
+             (rows (doc-asset-rows db data-dir id doc))
              (manifest
               `(("format" . ,bundle-format)
                 ("version" . ,bundle-version)
@@ -242,6 +261,136 @@ Description: Writes the bundle of deck (a row from load-deck) to the
                             (text-entry! z (car e) (cddr e))
                             (zip-add-file-entry z (car e) (cddr e))))
                       (player-entries static-dir id title design-id doc asset-urls))))))
+
+    ;; --- the offline player on its own ------------------------------------
+
+    (define (offline-readme title)
+      (string-append
+       "Folien – " title "\n"
+       "\n"
+       "Die Präsentation zum Zeigen ohne Internet und ohne Folien-Server:\n"
+       "index.html im Browser öffnen (alle Dateien dieses Ordners zusammen\n"
+       "lassen), F für Vollbild, Pfeiltasten oder Leertaste zum Blättern,\n"
+       "B schwarz, W weiss.\n"
+       "\n"
+       "Notizen und ausgeblendete Folien sind nicht dabei.\n"))
+
+    (define (write-offline-zip! db data-dir static-dir deck out-path)
+      "Syntax: (write-offline-zip! db data-dir static-dir deck out-path)
+Library: (app bundle)
+Description: Writes the offline player of deck (a row from load-deck),
+  without notes and hidden slides, as a zip of its folder to out-path:
+  index.html, its script, styles and fonts, assets/, LIESMICH.txt."
+      (let* ((id (col deck "id"))
+             (title (col deck "title"))
+             (doc (shareable-doc (deck-doc deck)))
+             (rows (doc-asset-rows db data-dir id doc)))
+        (call-with-output-zip out-path
+          (lambda (z)
+            (text-entry! z "LIESMICH.txt" (offline-readme title))
+            (for-each (lambda (row)
+                        (zip-add-file-entry z (asset-path row) (asset-file data-dir (col row "sha256"))))
+                      rows)
+            (for-each (lambda (e)
+                        (if (eq? (cadr e) 'text)
+                            (text-entry! z (car e) (cddr e))
+                            (zip-add-file-entry z (car e) (cddr e))))
+                      (player-entries static-dir id title (col deck "design") doc
+                                      (map (lambda (row) (cons (col row "sha256") (asset-path row))) rows)
+                                      ""))))))
+
+    (define (read-text-file path)
+      (call-with-input-file path
+        (lambda (p)
+          (let loop ((acc '()))
+            (let ((s (read-string 65536 p)))
+              (if (eof-object? s)
+                  (apply string-append (reverse acc))
+                  (loop (cons s acc))))))))
+
+    ;; The file at path as base64, written to port a piece at a time (a
+    ;; multiple of 3 bytes, so the pieces join up).
+    (define (write-base64-file path port)
+      (let ((in (open-binary-input-file path)))
+        (let loop ()
+          (let ((bv (read-bytevector (* 3 1024 1024) in)))
+            (unless (eof-object? bv)
+              (write-string (base64-encode bv) port)
+              (loop))))
+        (close-port in)))
+
+    ;; Inside <script>: "</" never ends the element early.
+    (define (script-safe s) (string-replace-all s "</" "<\\/"))
+
+    (define (write-player-html port static-dir deck-id title design-id doc assets)
+      "Syntax: (write-player-html port static-dir deck-id title design-id doc assets)
+Library: (app bundle)
+Description: Writes the offline player as one HTML file to port: styles
+  with the fonts as data URLs, the deck, the assets (a list of
+  (sha mime . path)) as base64 blocks, which offline.js turns into blob
+  URLs, and the player's script."
+      (let* ((fonts (font-files (find-design design-id)))
+             (font-url (lambda (f) (string-append "url(\"../fonts/" f "\")")))
+             (css (lambda (name)
+                    (let loop ((fs fonts) (text (read-text-file (string-append static-dir "/css/" name))))
+                      (cond ((null? fs) text)
+                            ((string-suffix? ".woff2" (car fs))
+                             (loop (cdr fs)
+                                   (if (string-contains-from text (font-url (car fs)) 0)
+                                       (let ((p (open-output-string)))
+                                         (write-string "url(\"data:font/woff2;base64," p)
+                                         (write-base64-file (string-append static-dir "/fonts/" (car fs)) p)
+                                         (write-string "\")" p)
+                                         (string-replace-all text (font-url (car fs)) (get-output-string p)))
+                                       text)))
+                            (else (loop (cdr fs) text))))))
+             (w (lambda strings (for-each (lambda (s) (write-string s port)) strings))))
+        (w "<!doctype html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n"
+           "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+           "<title>" (html-escape title) "</title>\n"
+           "<style>\n" (css "slides.css") "\n</style>\n"
+           "<style>\n" (css "present.css") "\n</style>\n")
+        ;; the fonts' licences go with them
+        (for-each (lambda (f)
+                    (when (string-suffix? ".txt" f)
+                      (w "<script type=\"text/plain\" class=\"font-license\" data-file=\"" f "\">\n"
+                         (script-safe (read-text-file (string-append static-dir "/fonts/" f)))
+                         "\n</script>\n")))
+                  fonts)
+        (w "</head>\n<body class=\"present-body\">\n"
+           "<div id=\"present\" class=\"present\"></div>\n")
+        (for-each (lambda (a)
+                    (w "<script type=\"application/x-folien-asset\" data-sha=\"" (car a)
+                       "\" data-mime=\"" (html-escape (cadr a)) "\">")
+                    (write-base64-file (cddr a) port)
+                    (w "</script>\n"))
+                  assets)
+        (w "<script>window.FOLIEN_BUNDLE = "
+           (script-safe (json->string
+                         `(("deck" . (("id" . ,deck-id) ("title" . ,title)))
+                           ("doc" . ,doc)
+                           ("design" . ,(find-design design-id))
+                           ("assets" . ()))))
+           ";</script>\n"
+           "<script>\n"
+           (script-safe (bundle-modules (string-append static-dir "/js") player-modules))
+           "</script>\n</body>\n</html>\n")))
+
+    (define (write-offline-html! db data-dir static-dir deck out-path)
+      "Syntax: (write-offline-html! db data-dir static-dir deck out-path)
+Library: (app bundle)
+Description: Writes the offline player of deck (a row from load-deck),
+  without notes and hidden slides, as one HTML file to out-path."
+      (let* ((id (col deck "id"))
+             (doc (shareable-doc (deck-doc deck)))
+             (rows (doc-asset-rows db data-dir id doc))
+             (port (open-output-file out-path)))
+        (write-player-html port static-dir id (col deck "title") (col deck "design") doc
+                           (map (lambda (row)
+                                  (cons (col row "sha256")
+                                        (cons (col row "mime") (asset-file data-dir (col row "sha256")))))
+                                rows))
+        (close-port port)))
 
     ;; --- reading --------------------------------------------------------
 

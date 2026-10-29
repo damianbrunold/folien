@@ -49,6 +49,7 @@
           doc-slides
           slide-number
           footer-elements
+          shareable-doc
           jref)
   (begin
 
@@ -87,6 +88,28 @@ Description: The number shown on the slide at index: its position among
           (if (>= i index)
               n
               (loop (+ i 1) (if (eq? (jref (vector-ref slides i) "hidden") #t) n (+ n 1)))))))
+
+    (define (shareable-doc doc)
+      "Syntax: (shareable-doc doc)
+Library: (app model)
+Description: The document as others may see it (publications, offline
+  players): without the speaker notes and the hidden slides. Slide
+  numbers stay as they were, since hidden slides do not count."
+      (map (lambda (p)
+             (if (equal? (car p) "slides")
+                 (cons "slides"
+                       (list->vector
+                        (let loop ((ss (vector->list (cdr p))) (acc '()))
+                          (cond ((null? ss) (reverse acc))
+                                ((eq? (jref (car ss) "hidden") #t) (loop (cdr ss) acc))
+                                (else (loop (cdr ss)
+                                            (cons (let drop ((ps (car ss)))
+                                                    (cond ((null? ps) '())
+                                                          ((equal? (caar ps) "notes") (drop (cdr ps)))
+                                                          (else (cons (car ps) (drop (cdr ps))))))
+                                                  acc)))))))
+                 p))
+           doc))
 
     (define (footer-elements doc design index today)
       "Syntax: (footer-elements doc design index today)

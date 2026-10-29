@@ -279,6 +279,11 @@ a.button.primary-link { color: var(--on-accent); background: var(--accent); bord
 .error-text { color: var(--danger); }
 .bundle-note { margin: 1rem 0 0; }
 .spaced-table { margin-top: 1rem; }
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.plain-list li { padding: 0.25rem 0; }
+.plain-list a[aria-current] { font-weight: 700; }
+/* Addresses of publications, long and meant to be copied. */
+.js-abs-url { overflow-wrap: anywhere; }
 
 /* Tags and templates in the lists; the search bar. */
 .tags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; margin-left: 0.5rem; }

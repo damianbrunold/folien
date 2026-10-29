@@ -2,9 +2,9 @@
 ;; systemd timer):
 ;;
 ;;   - decks in the trash for more than trash-days are deleted for good;
-;;   - assets no deck links to any more are removed (row and file); a
-;;     file is shared by every deck that uses the same content, so it goes
-;;     only when the last link has gone;
+;;   - assets no deck or publication links to any more are removed (row
+;;     and file); a file is shared by every deck and publication that uses
+;;     the same content, so it goes only when the last link has gone;
 ;;   - files in the asset store without a row (an upload that broke off),
 ;;     leftovers of uploads and imports (data-dir/tmp, *.tmp-*) and cached
 ;;     bundles are removed.
@@ -70,6 +70,7 @@ Description: Runs the clean-up and returns what it did: an alist of
                          (string-append
                           "SELECT a.sha256 FROM assets a WHERE NOT EXISTS "
                           "(SELECT 1 FROM presentation_assets pa WHERE pa.sha256 = a.sha256) "
+                          "AND NOT EXISTS (SELECT 1 FROM publication_assets ba WHERE ba.sha256 = a.sha256) "
                           "AND a.created_at < to_timestamp($1) - interval '1 hour'")
                          now-s))
              (assets (let loop ((rows unlinked) (n 0))
@@ -78,7 +79,8 @@ Description: Runs the clean-up and returns what it did: an alist of
                            (let ((sha (col (car rows) "sha256")))
                              (db-exec db
                                (string-append "DELETE FROM assets WHERE sha256 = $1 AND NOT EXISTS "
-                                              "(SELECT 1 FROM presentation_assets pa WHERE pa.sha256 = $1)")
+                                              "(SELECT 1 FROM presentation_assets pa WHERE pa.sha256 = $1) "
+                                              "AND NOT EXISTS (SELECT 1 FROM publication_assets ba WHERE ba.sha256 = $1)")
                                sha)
                              (delete-quietly! (asset-file data-dir sha))
                              (loop (cdr rows) (+ n 1))))))

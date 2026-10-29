@@ -55,6 +55,10 @@ function wireRemoteQr() {
 wireRemoteQr();
 wireMenus();
 
+// Addresses to pass on (publications) read in full, with this site's
+// origin, which only the browser knows.
+for (const a of document.querySelectorAll("a.js-abs-url")) a.textContent = a.href;
+
 async function getJSON(url) {
   const r = await fetch(url, { headers: { Accept: "application/json" } });
   if (!r.ok) throw new Error(url + ": " + r.status);
@@ -92,7 +96,8 @@ async function main() {
   let current = 0;
   let unfit = null;
   const byId = new Map(slides.map((s, i) => [s.id, i]));
-  const assetUrl = (sha) => root.dataset.deckUrl + "/assets/" + sha;
+  // a publication serves its assets elsewhere (data-assets-url)
+  const assetUrl = (sha) => (root.dataset.assetsUrl || root.dataset.deckUrl + "/assets") + "/" + sha;
   // Thumbnails get downscaled copies of images (videos ignore ?w).
   const thumbUrl = (sha) => assetUrl(sha) + "?w=640";
   const ctx = { assetUrl, videoControls: true, onLink: (id) => byId.has(id) && show(byId.get(id)) };
@@ -144,7 +149,8 @@ async function main() {
     const k = e.key;
     if (k === "F5" && !e.ctrlKey && !e.metaKey && root.dataset.presentUrl) {
       e.preventDefault();
-      const base = e.altKey ? root.dataset.presenterUrl : root.dataset.presentUrl;
+      // (a publication has no presenter console)
+      const base = (e.altKey && root.dataset.presenterUrl) || root.dataset.presentUrl;
       window.open(base + "#" + (e.shiftKey || e.altKey ? current + 1 : 1), "_blank");
       return;
     }

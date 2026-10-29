@@ -47,6 +47,7 @@
           (app export-pdf)
           (app export-pptx)
           (app bundle)
+          (app publish)
           (app views))
   (export make-app admin-role)
   (begin
@@ -102,7 +103,13 @@
         ("tags-saved"     success . "Stichwörter gespeichert.")
         ("template-on"    success . "Die Präsentation steht jetzt als Vorlage zur Wahl.")
         ("template-off"   success . "Die Präsentation ist keine Vorlage mehr.")
-        ("no-template"    error   . "Diese Vorlage gibt es nicht (mehr).")))
+        ("no-template"    error   . "Diese Vorlage gibt es nicht (mehr).")
+        ("published"      success . "Veröffentlicht: die Kopie ist unter ihrer Adresse zu sehen.")
+        ("withdrawn"      success . "Veröffentlichung zurückgezogen; ihre Adresse gilt nicht mehr.")
+        ("bad-label"      error   . "Der Anlass darf höchstens 120 Zeichen haben.")
+        ("slug-saved"     success . "Name der Adresse gespeichert.")
+        ("bad-slug"       error   . "Der Name: 3 bis 60 Kleinbuchstaben, Ziffern und einzelne Bindestriche.")
+        ("slug-taken"     error   . "Diesen Namen hat schon eine andere Präsentation.")))
 
     ;; The search text and tag of a list page's query string ("" if none).
     (define (list-filters req)
@@ -219,20 +226,18 @@
          (if (= n 1) "" (string-append " (" (number->string n) " pro Seite)")))
        ".pdf"))
 
-;; Bundles are built into data-dir/bundles, once per version of a deck
-    ;; (its revision, title and design), and served from there; files older
+;; Bundles, offline players and the PDFs of publications are built into
+    ;; data-dir/bundles, once per version of their content (for a deck its
+    ;; revision, title and design), and served from there; files older
     ;; than a day are removed when the next one is built.
     (define bundle-max-age-ms (* 24 60 60 1000))
 
-    (define (bundle-file data-dir static-dir db deck)
+    ;; The cached file <name>-<hash of key><ext>, key a string naming the
+    ;; content, written by (write! path) if it is not there.
+    (define (cached-file data-dir name ext key write!)
       (let* ((dir (string-append data-dir "/bundles"))
-             (key (bytevector->hex
-                   (bytevector-copy
-                    (sha256-hash (string-append (col deck "id") "|" (id->string (col deck "revision"))
-                                                "|" (col deck "title") "|" (col deck "design")
-                                                "|" (number->string bundle-version) "|pptx"))
-                    0 12)))
-             (path (string-append dir "/" (col deck "id") "-" key ".zip")))
+             (hash (bytevector->hex (bytevector-copy (sha256-hash key) 0 12)))
+             (path (string-append dir "/" name "-" hash ext)))
         (unless (directory-exists? dir)
           (guard (e (#t #f)) (make-directory dir)))
         (unless (file-exists? path)
@@ -245,9 +250,18 @@
                       (directory-files dir)))
           (let ((tmp (string-append path ".tmp-" (random-string "abcdefghijklmnop" 8))))
             (guard (e (#t (when (file-exists? tmp) (delete-file tmp)) (raise e)))
-              (write-bundle! db data-dir static-dir deck tmp)
+              (write! tmp)
               (move-file tmp path))))
         path))
+
+    (define (deck-key deck kind)
+      (string-append (col deck "id") "|" (id->string (col deck "revision"))
+                     "|" (col deck "title") "|" (col deck "design") "|" kind))
+
+    (define (bundle-file data-dir static-dir db deck)
+      (cached-file data-dir (col deck "id") ".zip"
+                   (deck-key deck (string-append (number->string bundle-version) "|pptx"))
+                   (lambda (tmp) (write-bundle! db data-dir static-dir deck tmp))))
 
     ;; --- presenting -----------------------------------------------------
 
@@ -586,7 +600,11 @@ Description: Builds the app's request handler. settings is an alist:
                                     '())
                                 (if (can-edit? (col deck "role"))
                                     (list-snapshots db (col deck "id"))
-                                    '())))
+                                    '())
+                                (and (equal? (col deck "role") "owner")
+                                     (not (equal? (col deck "status") "trashed"))
+                                     (cons (deck-public-names db (col user "id") (col deck "id"))
+                                           (list-publications db (col deck "id"))))))
                     (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
                                         (not-found-page (who user))))))))
 
@@ -876,6 +894,138 @@ Description: Builds the app's request handler. settings is an alist:
                         . ,(download-disposition (string-append (col deck "title") ".zip")))
                        ("Cache-Control" . "no-store"))
                      (bundle-file data-dir static-dir db deck)))))))
+
+        ;; The offline player alone, without notes and hidden slides: one
+        ;; HTML file, or its folder as a zip.
+        (let ((offline (lambda (kind ext content-type write!)
+                         (signed-in
+                           (lambda (req params user)
+                             (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
+                               (if (not deck)
+                                   (http-not-found)
+                                   (make-http-file-response
+                                    200
+                                    `(("Content-Type" . ,content-type)
+                                      ("Content-Disposition"
+                                       . ,(download-disposition (string-append (col deck "title") ext)))
+                                      ("Cache-Control" . "no-store"))
+                                    (cached-file data-dir (string-append (col deck "id") "-" kind) (if (string=? ext ".html") ".html" ".zip")
+                                                 (deck-key deck kind)
+                                                 (lambda (tmp) (write! db data-dir static-dir deck tmp)))))))))))
+          (route! "GET" "/decks/:id/export.html"
+            (offline "offline-html" ".html" "text/html; charset=utf-8" write-offline-html!))
+          (route! "GET" "/decks/:id/export-offline.zip"
+            (offline "offline-zip" " (offline).zip" "application/zip" write-offline-zip!)))
+
+        ;; --- publishing (the owner) ---
+
+        (route! "POST" "/decks/:id/publish"
+          (signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (label (form-ref (http-request-form req) "label" "")))
+                (cond
+                  ((not (valid-label? label)) (redirect (string-append "/decks/" id "?m=bad-label#publish")))
+                  ((publish-deck! db (col user "id") id label)
+                   (redirect (string-append "/decks/" id "?m=published#publish")))
+                  (else (redirect (string-append "/decks/" id "?m=not-owner"))))))))
+
+        (route! "POST" "/decks/:id/publications/:pid/withdraw"
+          (signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (redirect (string-append "/decks/" id
+                                         (if (withdraw-publication! db (col user "id") id (params-ref params "pid"))
+                                             "?m=withdrawn#publish"
+                                             "?m=not-owner")))))))
+
+        (route! "POST" "/decks/:id/public-name"
+          (signed-in
+            (lambda (req params user)
+              (let* ((id (params-ref params "id"))
+                     (slug (string-downcase (form-ref (http-request-form req) "slug" "")))
+                     (r (set-public-slug! db (col user "id") id slug)))
+                (redirect (string-append "/decks/" id
+                                         (case r
+                                           ((ok) "?m=slug-saved#publish")
+                                           ((invalid) "?m=bad-slug#publish")
+                                           ((taken) "?m=slug-taken#publish")
+                                           (else "?m=not-owner"))))))))
+
+        ;; --- publications (anyone, no sign-in) ---
+        ;; /p/<name> is the deck's newest publication, /p/<name>/<stamp>
+        ;; one of them; name is the deck's token or slug.
+
+        (let* ((not-found (lambda ()
+                            (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
+                                                (public-not-found-page))))
+               (base-of (lambda (params pub)
+                          (string-append "/p/" (params-ref params "name") "/" (col pub "stamp"))))
+               ;; handler gets the publication of the route's name and stamp
+               (public (lambda (handler)
+                         (lambda (req params)
+                           (let ((pub (find-publication db (params-ref params "name")
+                                                        (params-ref params "stamp"))))
+                             (if pub (handler req params pub) (not-found)))))))
+          (define (show req params pub)
+            (html-response (public-page (base-of params pub) pub
+                                        (public-publications db (params-ref params "name")))))
+          (route! "GET" "/p/:name" (public show))
+          (route! "GET" "/p/:name/:stamp" (public show))
+          (route! "GET" "/p/:name/:stamp/present"
+            (public (lambda (req params pub)
+                      (html-response (public-present-page (base-of params pub) pub)))))
+          (route! "GET" "/p/:name/:stamp/deck.json"
+            (public (lambda (req params pub)
+                      (make-http-response
+                       200
+                       '(("Content-Type" . "application/json") ("Cache-Control" . "no-cache"))
+                       ;; the document as stored, not parsed and written again
+                       (string-append "{\"id\":" (json->string (base-of params pub))
+                                      ",\"title\":" (json->string (col pub "title"))
+                                      ",\"design\":" (json->string (col pub "design"))
+                                      ",\"doc\":" (col pub "doc") "}")))))
+          (route! "GET" "/p/:name/:stamp/designs.json"
+            (public (lambda (req params pub)
+                      (let ((d (find-design (col pub "design"))))
+                        (json-status 200 (if d (vector d) (vector)))))))
+          ;; As the deck's assets, but only those the publication shows.
+          (route! "GET" "/p/:name/:stamp/assets/:sha"
+            (public (lambda (req params pub)
+                      (let* ((sha (params-ref params "sha"))
+                             (mime (and (valid-sha? sha) (publication-asset-mime db (col pub "id") sha)))
+                             (w (let ((p (assoc "w" (url-query-params (http-request-url req)))))
+                                  (and p (string->number (cdr p)))))
+                             (variant (and mime w (memv w variant-widths) (raster-mime? mime)
+                                           (image-variant data-dir sha (asset-file data-dir sha) mime w))))
+                        (if (not (and mime (file-exists? (asset-file data-dir sha))))
+                            (http-not-found)
+                            (let ((r (file-response (if variant (car variant) (asset-file data-dir sha))
+                                                    `((request . ,req)
+                                                      (content-type . ,mime)
+                                                      (cache-control . "public, max-age=31536000, immutable")))))
+                              (http-response-with-headers
+                               r (http-response-status r)
+                               (cons (cons "Content-Security-Policy" asset-csp)
+                                     (http-response-headers r)))))))))
+          (route! "GET" "/p/:name/:stamp/folien.pdf"
+            (public (lambda (req params pub)
+                      (make-http-file-response
+                       200
+                       `(("Content-Type" . "application/pdf")
+                         ("Content-Disposition"
+                          . ,(download-disposition (string-append (col pub "title") ".pdf")))
+                         ("Cache-Control" . "no-cache"))
+                       (cached-file data-dir (string-append "publication-" (id->string (col pub "id"))) ".pdf"
+                                    (string-append (id->string (col pub "id")) "|" (col pub "stamp")
+                                                   "|" (col pub "design"))
+                                    (lambda (tmp)
+                                      (let ((p (open-binary-output-file tmp)))
+                                        (write-bytevector
+                                         (deck->pdf (json-parse (col pub "doc")) (col pub "design")
+                                                    (col pub "title") data-dir '())
+                                         p)
+                                        (close-port p)))))))))
 
         ;; A bundle (the zip as the body) becomes a new deck: 201 {"id"},
         ;; or 400 {"error"} with a message for the user.

@@ -15,7 +15,7 @@
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app designs) (app model))
+(import (app designs) (app model) (only (app publish) valid-slug? publication-doc))
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien model")
@@ -194,5 +194,29 @@
     (test-assert (has? (validate-doc (put footed "footer" '(("number" . "ja"))) "folien") "footer.number"))
     (test-assert (has? (validate-doc (with-slide footed (slide "x" "blank" '("footer" . #t))) "folien")
                        "slides[0].footer"))))
+
+(test-group "shared and published copies"
+  (let* ((notes '(("paragraphs" . #((("runs" . #((("text" . "geheim")))))))))
+         (doc `(("format" . 1)
+                ("footer" . (("date" . "auto") ("text" . "Bern")))
+                ("slides" . #((("id" . "a") ("layout" . "blank") ("notes" . ,notes) ("elements" . #()))
+                              (("id" . "b") ("layout" . "blank") ("hidden" . #t) ("elements" . #()))
+                              (("id" . "c") ("layout" . "blank") ("hidden" . #f) ("elements" . #()))))))
+         (shared (shareable-doc doc))
+         (published (publication-doc doc "29.10.2026")))
+    (test-equal '("a" "c") (map (lambda (s) (jref s "id")) (vector->list (doc-slides shared))))
+    (test-equal #f (jref (vector-ref (doc-slides shared) 0) "notes" #f))
+    (test-equal "the footer stays" "auto" (jref (jref shared "footer") "date"))
+    (test-equal "fixed" (jref (jref published "footer") "date"))
+    (test-equal "29.10.2026" (jref (jref published "footer") "dateText"))
+    (test-equal "Bern" (jref (jref published "footer") "text"))
+    (test-equal 2 (vector-length (doc-slides published)))
+    (test-equal #f (validate-doc published "folien"))
+    ;; a fixed date stays as it is
+    (let ((fixed (publication-doc (cons '("footer" . (("date" . "fixed") ("dateText" . "Mai"))) (cdr doc)) "1.1.2000")))
+      (test-equal "Mai" (jref (jref fixed "footer") "dateText"))))
+  (for-each (lambda (s) (test-assert s (valid-slug? s))) '("abc" "tagung-bern" "ki-2026" "a1b"))
+  (for-each (lambda (s) (test-assert s (not (valid-slug? s))))
+            (list "ab" "-abc" "abc-" "a--b" "Abc" "a b" "äbc" "a_b" (make-string 61 #\a) 'x)))
 
 (test-end "folien model")

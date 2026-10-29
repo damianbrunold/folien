@@ -1,5 +1,6 @@
 // The presentation page: loads the deck from the server and presents it
-// (present-app.js), with the presenter console and the remote in step.
+// (present-app.js), with the presenter console and the remote in step. A
+// publication's page has no events URL (no remote) and its own assets URL.
 
 import { startPresentation } from "./present-app.js";
 import { loadDeck } from "./sync.js";
@@ -13,7 +14,7 @@ loadDeck(urls)
       deck,
       doc,
       design,
-      assetUrl: (sha) => urls.deckUrl + "/assets/" + sha,
+      assetUrl: (sha) => (urls.assetsUrl || urls.deckUrl + "/assets") + "/" + sha,
       exitUrl: urls.viewUrl,
       eventsUrl: urls.eventsUrl,
     }),

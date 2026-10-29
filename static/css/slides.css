@@ -165,6 +165,8 @@
   border-radius: 0.5rem;
 }
 .viewer-notes p { margin: 0 0 0.4rem; }
+/* A publication has no notes. */
+.public-viewer .viewer-notes { display: none; }
 /* Code in notes (render.js renderNotes), in the viewer, the presenter
    console and the remote. */
 .viewer-notes .code, .p-notes .code, .r-notes .code {

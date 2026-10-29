@@ -12,6 +12,7 @@
           (app designs)
           (app users))            ; col
   (export login-page remote-link-expired-page decks-page deck-page editor-page present-page presenter-page remote-page
+          public-page public-present-page public-not-found-page
           profile-page admin-page
           error-page not-found-page)
   (begin
@@ -433,7 +434,73 @@
                                                         "Löschen" "small danger"))))))
                          versions))))))
 
-    (define (deck-page who deck slide-count msg shares versions)
+    ;; The public address of a deck's publications: under its slug if it
+    ;; has one, else its token.
+    (define (public-path names . stamp)
+      (string-append "/p/" (or (cdr names) (car names))
+                     (if (pair? stamp) (string-append "/" (car stamp)) "")))
+
+    ;; "2026-10-29-2" -> "29.10.2026"
+    (define (stamp-date stamp)
+      (if (>= (string-length stamp) 10)
+          (string-append (substring stamp 8 10) "." (substring stamp 5 7) "." (substring stamp 0 4))
+          stamp))
+
+    ;; Publishing (for the owner): publish now, the publications with
+    ;; their addresses, the readable name. names: (token . slug), each #f
+    ;; if not set.
+    (define (publish-card id names publications)
+      `(section (@ (id "publish") (class "card spaced-card"))
+         (h3 "Veröffentlichen")
+         (p (@ (class "muted"))
+            "Eine Veröffentlichung ist eine feste Kopie der Präsentation, ohne Notizen und "
+            "ausgeblendete Folien: alle mit der Adresse können sie ansehen, präsentieren und als PDF "
+            "laden, ohne Anmeldung. Spätere Änderungen erscheinen erst mit einer neuen "
+            "Veröffentlichung; die früheren bleiben unter ihrer Adresse, bis Sie sie zurückziehen.")
+         (form (@ (method "post") (action ,(url (string-append "/decks/" id "/publish")))
+                  (class "row-form"))
+           (input (@ (name "label") (placeholder "Anlass, z. B. «Tagung Bern» (freiwillig)")
+                     (aria-label "Anlass") (maxlength "120")))
+           (button (@ (type "submit") (class "primary")) "Jetzt veröffentlichen"))
+         ,(if (null? publications)
+              '(p (@ (class "muted")) "Noch nicht veröffentlicht.")
+              `(div
+                 (p "Die neueste Veröffentlichung, immer unter derselben Adresse: "
+                    (a (@ (class "js-abs-url") (href ,(url (public-path names)))) ,(url (public-path names))))
+                 (table (@ (class "data spaced-table"))
+                   (tbody
+                    ,@(map (lambda (b)
+                             (let ((path (url (public-path names (col b "stamp")))))
+                               `(tr (td (a (@ (class "js-abs-url") (href ,path)) ,path))
+                                    (td ,(col b "label"))
+                                    (td (@ (class "muted nowrap"))
+                                        ,(format-time (col b "created_at")) " · "
+                                        ,(let ((n (col b "slides")))
+                                           (if (number? n) (number->string n) n))
+                                        " Folien")
+                                    (td ,(action-button id (string-append "/publications/"
+                                                                          (id->string (col b "id"))
+                                                                          "/withdraw")
+                                                        "Zurückziehen" "small danger")))))
+                           publications)))))
+         (form (@ (method "post") (action ,(url (string-append "/decks/" id "/public-name")))
+                  (class "row-form"))
+           (label (@ (class "inline-field")) "Name in der Adresse"
+             (input (@ (name "slug") (value ,(or (cdr names) "")) (maxlength "60")
+                       (placeholder "z. B. tagung-bern") (pattern "[a-z0-9]+(-[a-z0-9]+)*"))))
+           (button (@ (type "submit")) "Speichern"))
+         (p (@ (class "muted"))
+            "Kleinbuchstaben, Ziffern und Bindestriche, 3 bis 60 Zeichen: /p/<name>. "
+            ,@(if (car names)
+                  `("Die Adresse mit der zufälligen Kennung, "
+                    (a (@ (class "js-abs-url") (href ,(url (string-append "/p/" (car names)))))
+                       ,(url (string-append "/p/" (car names))))
+                    ", gilt immer, auch nach einer Umbenennung.")
+                  '("Die Adresse mit der zufälligen Kennung, die die erste Veröffentlichung erhält, "
+                    "gilt immer, auch nach einer Umbenennung.")))))
+
+    ;; publishing: #f, or (names . publications) for publish-card.
+    (define (deck-page who deck slide-count msg shares versions publishing)
       (let* ((id (col deck "id"))
              (status (col deck "status"))
              (role (col deck "role"))
@@ -490,7 +557,15 @@
                   (a (@ (href ,(url (string-append "/decks/" id "/export.zip"))))
                      "Alles als ZIP herunterladen")
                   " – die Präsentation mit Bildern und Videos, den PDFs und einem "
-                  "Player, der ohne Server im Browser läuft. Das ZIP lässt sich wieder importieren."))
+                  "Player, der ohne Server im Browser läuft. Das ZIP lässt sich wieder importieren.")
+               (p (@ (class "muted bundle-note"))
+                  "Zum Präsentieren ohne Internet: "
+                  (a (@ (href ,(url (string-append "/decks/" id "/export.html"))))
+                     "als eine HTML-Datei")
+                  " (alles darin; im Browser öffnen) oder "
+                  (a (@ (href ,(url (string-append "/decks/" id "/export-offline.zip"))))
+                     "als Ordner (ZIP)")
+                  " – besser bei grossen Videos. Ohne Notizen und ausgeblendete Folien."))
              ,(if active?
                   `(form (@ (method "post") (action ,(url (string-append "/decks/" id "/rename")))
                             (class "row-form spaced"))
@@ -519,6 +594,7 @@
                           ""))
                   "")
              ,(if active? (versions-card id versions) "")
+             ,(if publishing (publish-card id (car publishing) (cdr publishing)) "")
              ,(if (and owner? (not (string=? status "trashed"))) (shares-card id shares) ""))
           `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
           `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
@@ -540,6 +616,9 @@
           (data-home-url ,(url "/")))))
 
     (define (app-page deck title-suffix body-class root-id stylesheets script)
+      (app-shell (col deck "title") title-suffix body-class root-id stylesheets script (deck-urls deck)))
+
+    (define (app-shell title title-suffix body-class root-id stylesheets script data)
       (string-append
        (html->string
         (html5
@@ -547,14 +626,14 @@
          `(head
            (meta (@ (charset "utf-8")))
            (meta (@ (name "viewport") (content "width=device-width, initial-scale=1")))
-           (title ,(string-append (col deck "title") title-suffix " · Folien"))
+           (title ,(string-append title title-suffix " · Folien"))
            (link (@ (rel "icon") (href ,(asset "favicon.svg"))))
            ,@(map (lambda (css) `(link (@ (rel "stylesheet") (href ,(asset css)))))
                   (append '("css/app.css" "css/slides.css") stylesheets))
            (script (@ (src ,(asset "js/theme-init.js"))))
            (script (@ (type "module") (src ,(asset script)))))
          `(body (@ (class ,body-class))
-            (div (@ (id ,root-id) (class ,root-id) ,@(deck-urls deck))
+            (div (@ (id ,root-id) (class ,root-id) ,@data)
               (noscript "Diese Seite braucht JavaScript.")))))
        "\n"))
 
@@ -572,6 +651,71 @@
     (define (remote-page deck)
       (app-page deck " (Fernbedienung)" "remote-body" "remote" '("css/present.css")
                 "js/remote.js"))
+
+    ;; --- publications (no sign-in) ------------------------------------------
+    ;; base: the publication's address, /p/<name>/<stamp>, as the visitor
+    ;; came (by slug or token).
+
+    (define (public-page base pub others)
+      (let* ((stamp (col pub "stamp"))
+             (label (col pub "label"))
+             (title (col pub "title")))
+        (page title #f
+          `(section
+             (div (@ (class "deck-head"))
+               (div
+                 (p (@ (class "eyebrow"))
+                    "Veröffentlicht am " ,(stamp-date stamp)
+                    ,(if (and (string? label) (> (string-length label) 0)) (string-append " · " label) ""))
+                 (h2 ,title))
+               (div (@ (class "actions overview-actions"))
+                 (a (@ (class "button small primary-link") (href ,(url (string-append base "/present"))))
+                    "Präsentieren")
+                 (a (@ (class "button small") (href ,(url (string-append base "/folien.pdf"))))
+                    "PDF herunterladen")))
+             (div (@ (id "viewer") (class "viewer public-viewer")
+                     (data-deck-url ,(url (string-append base "/deck.json")))
+                     (data-designs-url ,(url (string-append base "/designs.json")))
+                     (data-assets-url ,(url (string-append base "/assets")))
+                     (data-present-url ,(url (string-append base "/present"))))
+               (noscript "Zum Anzeigen der Folien wird JavaScript benötigt."))
+             ,(if (> (length others) 1)
+                  `(section (@ (class "card spaced-card"))
+                     (h3 "Alle Fassungen")
+                     (ul (@ (class "plain-list"))
+                       ,@(map (lambda (b)
+                                (let ((s (col b "stamp"))
+                                      (l (col b "label")))
+                                  `(li (a (@ (href ,(url (string-append (public-base base) "/" s)))
+                                             ,@(if (equal? s stamp) '((aria-current "page")) '()))
+                                          ,(stamp-date s))
+                                       ,(if (and (string? l) (> (string-length l) 0)) (string-append " · " l) "")
+                                       ,(if (equal? (col b "title") title) "" (string-append " · " (col b "title"))))))
+                              others)))
+                  ""))
+          `(link (@ (rel "stylesheet") (href ,(asset "css/slides.css"))))
+          `(script (@ (type "module") (src ,(asset "js/viewer.js")))))))
+
+    ;; /p/<name>/<stamp> -> /p/<name>
+    (define (public-base base)
+      (let loop ((i (- (string-length base) 1)))
+        (cond ((<= i 0) base)
+              ((char=? (string-ref base i) #\/) (substring base 0 i))
+              (else (loop (- i 1))))))
+
+    (define (public-present-page base pub)
+      (app-shell (col pub "title") " (Präsentation)" "present-body" "present" '("css/present.css")
+                 "js/present.js"
+                 `((data-deck-url ,(url (string-append base "/deck.json")))
+                   (data-designs-url ,(url (string-append base "/designs.json")))
+                   (data-assets-url ,(url (string-append base "/assets")))
+                   (data-view-url ,(url base)))))
+
+    (define (public-not-found-page)
+      (page "Nicht gefunden" #f
+        `(section (@ (class "card"))
+           (h2 "Nicht gefunden")
+           (p "Diese Veröffentlichung gibt es nicht oder nicht mehr."))))
 
     ;; --- profile ------------------------------------------------------
 

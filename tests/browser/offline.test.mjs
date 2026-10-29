@@ -2,7 +2,8 @@
 // in headless Firefox: the classic-script build of the presentation
 // code runs, the slides draw in Inter, images load from ../assets, the
 // keys move on. The player files are written by tests/js/player-files.scm
-// exactly as a bundle has them. Run:
+// exactly as a bundle has them; the one-file player (everything in one
+// HTML file) by tests/js/player-html.scm. Run:
 //   node --experimental-websocket --test tests/browser/
 
 import { test, before, after } from "node:test";
@@ -74,6 +75,14 @@ before(async () => {
     assets: { [sha]: "../assets/" + sha + ".png" },
   }));
   execFileSync("scm", [join(root, "tests/js/player-files.scm"), join(dir, "deck.json"), dir]);
+  writeFileSync(join(dir, "single.json"), JSON.stringify({
+    id: "d1", title: "Eine Datei", design: "zh",
+    doc: { format: 1, slides: [s1, s2] },
+    files: { [sha]: ["image/png", join(dir, "assets", sha + ".png")] },
+  }));
+  mkdirSync(join(dir, "single"));
+  execFileSync("scm", [join(root, "tests/js/player-html.scm"), join(dir, "single.json"),
+    join(dir, "single", "folien.html")]);
   browser = await launchFirefox({ port: 9337 });
 });
 
@@ -101,6 +110,24 @@ test("the offline player runs from the file system", async () => {
   if (process.env.FOLIEN_SHOTS) {
     writeFileSync(process.env.FOLIEN_SHOTS + "/11-offline.png", await browser.screenshot());
   }
+  await browser.keys(Keys.right);
+  await browser.waitFor("location.hash === '#2'");
+  assert.ok(await browser.eval("document.body.textContent.includes('Zweite Folie')"));
+});
+
+test("the one-file player needs nothing beside it", async () => {
+  // alone in its folder: no assets, fonts or scripts next to it
+  await browser.open("file://" + join(dir, "single", "folien.html"), 1280, 720);
+  await browser.waitFor("!!document.querySelector('.player-layer .slide')", 10000);
+  assert.equal(await browser.eval("document.title"), "Eine Datei · Folien");
+  // the image from its base64 block, as a blob URL
+  await browser.waitFor(`(() => {
+    const i = document.querySelector('.player-layer img');
+    return i && i.complete && i.naturalWidth === 40 && i.src.startsWith('blob:');
+  })()`, 5000);
+  assert.equal(await browser.eval("document.querySelectorAll('script[type=\"application/x-folien-asset\"]').length"), 0);
+  await browser.waitFor("document.fonts.check('900 40px Inter')", 5000);
+  await browser.waitFor(`[...document.fonts].some((f) => f.family.includes('Inter') && f.status === 'loaded')`, 5000);
   await browser.keys(Keys.right);
   await browser.waitFor("location.hash === '#2'");
   assert.ok(await browser.eval("document.body.textContent.includes('Zweite Folie')"));
