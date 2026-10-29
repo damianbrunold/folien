@@ -19,7 +19,7 @@
 ;;   /usr/lib/systemd/system/         the units from deploy/systemd/, with the
 ;;                                    packaged paths
 ;;   /usr/share/folien/config.default.scm   copied to /etc by postinst
-;;   /usr/share/doc/folien/           README.Debian, copyright, nginx example
+;;   /usr/share/doc/folien/           README.Debian, copyright, nginx/Apache examples
 ;;   /var/lib/folien/                 data-dir: assets, backups (StateDirectory)
 ;;
 ;; Not packaged: the dev server, the demo seeder, tests, install.sh.
@@ -241,7 +241,11 @@
                    (in-root "deploy" "debian" "README.Debian"))
         (text (string-append doc "copyright") #o644 copyright)
         (from-repo (string-append doc "nginx.conf.example") #o644
-                   (in-root "deploy" "nginx.conf.example"))))
+                   (in-root "deploy" "nginx.conf.example"))
+        (from-repo (string-append doc "apache2.conf.example") #o644
+                   (in-root "deploy" "apache2.conf.example"))
+        (from-repo (string-append doc "apache2-subpath.conf.example") #o644
+                   (in-root "deploy" "apache2-subpath.conf.example"))))
 
 (define runtime-files
   (list (from-repo (string-append opt "lib/scm.jar") #o644 jar)

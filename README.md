@@ -81,7 +81,7 @@ static/               CSS, fonts (Inter, JetBrains Mono: SIL OFL; Roboto Slab:
                       Apache 2.0), favicon; js/render.js draws slides (shared
                       by viewer, editor, player), js/viewer.js
 tests/                test_pure_*.scm (no database), test_live_web.scm
-deploy/               systemd units, health probe, nginx example, install script
+deploy/               systemd units, health probe, nginx/Apache examples, install script
 ```
 
 ## The deck document
@@ -330,4 +330,7 @@ admin with `folien-admin seed-admin <name>`, start the units).
 starter-admin).
 
 Either way the app binds loopback only behind a TLS-terminating reverse
-proxy (`deploy/nginx.conf.example`).
+proxy (`deploy/nginx.conf.example`, or `deploy/apache2.conf.example` for
+Apache). To run it under a path of an existing site
+(`https://www.example.com/folien/`), set `url-prefix` and see
+`deploy/apache2-subpath.conf.example`.

@@ -1,0 +1,61 @@
+# Reverse proxy in front of folien with Apache 2.4 (2.4.47 or later for
+# upgrade=websocket). The app binds 127.0.0.1 only; Apache terminates TLS
+# on the public interface and forwards to it.
+#
+# Modules: a2enmod ssl headers proxy proxy_http
+# (On Apache before 2.4.47 also proxy_wstunnel; see the socket below.)
+#
+# On Debian: copy to /etc/apache2/sites-available/folien.conf, then
+# a2ensite folien && systemctl reload apache2.
+
+<VirtualHost *:80>
+    ServerName example.com
+    Redirect permanent / https://example.com/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName example.com
+
+    SSLEngine on
+    # SSLCertificateFile    /etc/letsencrypt/live/example.com/fullchain.pem
+    # SSLCertificateKeyFile /etc/letsencrypt/live/example.com/privkey.pem
+
+    # The app sees the browser's Host header. Required: the WebSocket
+    # handshake is refused unless its Origin matches Host.
+    ProxyPreserveHost On
+    ProxyRequests     Off
+    RequestHeader set X-Forwarded-Proto "https"
+    # X-Forwarded-For and X-Forwarded-Host are added by mod_proxy itself.
+
+    # Uploads (images, videos) up to the app's max-upload-bytes (1 GiB by
+    # default). 0 = no limit in Apache; the app enforces its own.
+    LimitRequestBody 0
+
+    # Exports (PDF, PowerPoint, zip) of large decks can take a while.
+    ProxyTimeout 300
+
+    # At the host root. To mount the app under a path instead, set
+    # (define url-prefix "/team") in the config and put "/team" in front
+    # of every path below on both sides ("/team/" http://127.0.0.1:8090/team/).
+    # The path must be passed through unchanged, which is what the app
+    # expects.
+
+    # The live connection of presenting (remote control): a WebSocket.
+    # Must come before the general ProxyPass. Without it the browsers fall
+    # back to server-sent events, which work too. The app sends a keepalive
+    # every 25 s, so a long timeout keeps idle connections open.
+    # On Apache before 2.4.47 instead:
+    #   ProxyPassMatch "^/api/decks/([^/]+)/socket$" "ws://127.0.0.1:8090/api/decks/$1/socket"
+    ProxyPassMatch "^/api/decks/([^/]+)/socket$" "http://127.0.0.1:8090/api/decks/$1/socket" upgrade=websocket timeout=3600
+
+    # The server-sent event fallback: passed on unbuffered and uncompressed
+    # (mod_deflate would hold the events back).
+    ProxyPassMatch "^/api/decks/([^/]+)/events$" "http://127.0.0.1:8090/api/decks/$1/events" flushpackets=on timeout=3600
+    <LocationMatch "^/api/decks/[^/]+/events$">
+        SetEnv no-gzip 1
+    </LocationMatch>
+
+    # Everything else.
+    ProxyPass        "/" "http://127.0.0.1:8090/" keepalive=On
+    ProxyPassReverse "/" "http://127.0.0.1:8090/"
+</VirtualHost>

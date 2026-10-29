@@ -1,0 +1,47 @@
+# folien as part of an existing site with Apache 2.4 (2.4.47 or later
+# for upgrade=websocket): https://www.example.com/folien/ instead of a
+# host of its own. See apache2.conf.example for the full virtual host.
+#
+# 1. In the app's config (/etc/folien/config.scm), then restart folien:
+#      (define url-prefix "/folien")
+#    The app then puts /folien in front of every link, redirect, API call
+#    and static file, and scopes its session cookie to /folien/, so it
+#    does not collide with cookies of the rest of the site.
+#
+# 2. Modules: a2enmod headers proxy proxy_http
+#
+# 3. Put the lines below inside the site's existing <VirtualHost *:443>,
+#    or save them as /etc/apache2/conf-available/folien.conf and add
+#    "Include conf-available/folien.conf" there. The rest of the site
+#    stays as it is.
+#
+# The path is passed on unchanged ("/folien/..." -> "http://127.0.0.1:8090/folien/...");
+# the app expects the prefix and does not want it stripped.
+
+# Without the trailing slash to the start page.
+RedirectMatch permanent "^/folien$" "/folien/"
+
+# Only for folien, not the rest of the site: the app needs the browser's
+# Host header (the WebSocket handshake is refused unless Origin matches
+# Host) and wants to know the request came in over HTTPS.
+<Location "/folien/">
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+    # Uploads up to the app's max-upload-bytes; the app enforces its own.
+    LimitRequestBody 0
+</Location>
+
+# The live connection of presenting (remote control): a WebSocket. Must
+# come before the general ProxyPass. On Apache before 2.4.47 use ws://
+# instead of http:// and upgrade=websocket, with mod_proxy_wstunnel.
+ProxyPassMatch "^/folien/api/decks/([^/]+)/socket$" "http://127.0.0.1:8090/folien/api/decks/$1/socket" upgrade=websocket timeout=3600
+
+# The server-sent event fallback: unbuffered and uncompressed.
+ProxyPassMatch "^/folien/api/decks/([^/]+)/events$" "http://127.0.0.1:8090/folien/api/decks/$1/events" flushpackets=on timeout=3600
+<LocationMatch "^/folien/api/decks/[^/]+/events$">
+    SetEnv no-gzip 1
+</LocationMatch>
+
+# Everything else under /folien/. timeout: exports of large decks.
+ProxyPass        "/folien/" "http://127.0.0.1:8090/folien/" keepalive=On timeout=300
+ProxyPassReverse "/folien/" "http://127.0.0.1:8090/folien/"

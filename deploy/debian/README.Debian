@@ -23,7 +23,9 @@ First install
        folien-maintenance.timer folien-backup.timer
   5. Reverse proxy with TLS in front: /usr/share/doc/folien/nginx.conf.example
      (client_max_body_size for uploads; buffering stays off for the event
-     streams of presenting).
+     streams of presenting). For Apache 2.4:
+     /usr/share/doc/folien/apache2.conf.example, or under a path of an
+     existing site (url-prefix): apache2-subpath.conf.example
 
 Upgrades
   apt install ./folien_<version>_all.deb — migrations run when the service
