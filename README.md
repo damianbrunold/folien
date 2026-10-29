@@ -25,7 +25,8 @@ Implemented step by step, phase by phase:
 - [x] Phase 4 — images and videos: upload, drag and drop, paste, image
       placeholders, poster frames, media library, byte-range streaming
 - [x] Phase 5 — presenting: transitions, builds, black/white screen,
-      presenter console with notes, next preview and timer, phone remote
+      presenter console with notes, next preview, timer and an overview
+      to jump to any slide, phone remote
       (WebSocket, falling back to server-sent events)
 - [x] Phase 6 — PDF export: slides (960 × 540 pt) or A4 handouts with 2 or 4
       per page, each with or without notes; builds final or step by step
@@ -219,7 +220,9 @@ document must validate; newer bundle versions are refused with a message.
 "Präsentieren" opens the deck full-window (F for fullscreen; arrows,
 space, Page Up/Down and clickers move on; B and W blank the screen; a
 number and Enter jump). The "Referentenansicht" shows the current slide,
-what the next click brings, the notes, a timer and the clock; it opens
+what the next click brings, the notes, a timer and the clock; "Übersicht"
+(G) shows all slides there to jump to one (click, or arrows and Enter;
+the audience only sees the slide jumped to); it opens
 the audience window (drag it to the projector and press F there) and
 both stay in step over a BroadcastChannel. The "Fernbedienung" (open it
 on a phone, signed in as the same user, or by its QR code, see below)

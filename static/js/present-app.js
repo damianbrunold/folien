@@ -194,7 +194,8 @@ export function startPresentation(root, opts) {
       return;
     }
     if (e.key === "Enter" && digits) {
-      go(nav.slideStart(doc, parseInt(digits, 10) - 1), "self");
+      const i = nav.slideByNumber(doc, parseInt(digits, 10));
+      if (i !== null) go(nav.slideStart(doc, i), "self");
       digits = "";
       e.preventDefault();
       return;

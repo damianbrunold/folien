@@ -67,6 +67,13 @@ export function slideStart(doc, i) {
   return { slide: Math.max(0, Math.min(doc.slides.length - 1, i)), step: 0 };
 }
 
+// The index of the slide with number n as the audience counts (hidden
+// slides do not count, as in slideLabel and the footer); null if none.
+export function slideByNumber(doc, n) {
+  const v = visibleIndices(doc);
+  return Number.isInteger(n) && n >= 1 && n <= v.length ? v[n - 1] : null;
+}
+
 // A position from untrusted input (another window, the remote), clamped
 // into the deck; null if it is not one.
 export function clampPos(doc, pos) {

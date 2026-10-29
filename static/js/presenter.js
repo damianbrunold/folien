@@ -17,6 +17,7 @@ loadDeck(urls)
       design,
       assetUrl,
       previewUrl: (sha) => assetUrl(sha) + "?w=1280",
+      thumbUrl: (sha) => assetUrl(sha) + "?w=640",
       presentUrl: urls.presentUrl,
       exitUrl: urls.viewUrl,
       eventsUrl: urls.eventsUrl,

@@ -93,8 +93,9 @@ test("the presentation: builds, hidden slides, black screen, end", async () => {
   await p.waitFor("location.hash === '#2'");
   await p.keys(Keys.left);
   await p.waitFor("location.hash === '#1.1'");
-  // a number and Enter jump
-  await p.keys("4");
+  // a number and Enter jump, counting as the audience does: slide 3 is
+  // hidden, so 3 is the fourth
+  await p.keys("3");
   await p.keys(Keys.enter);
   await p.waitFor("location.hash === '#4'");
   // "?" shows the keys; while it is open, keys do not move the slides
@@ -135,6 +136,49 @@ test("the presenter console keeps the presentation in step", async () => {
   await audience.waitFor("!document.querySelector('.present-blank').classList.contains('black')");
   browser.presenterTab = presenter;
   browser.audienceTab = audience;
+});
+
+test("the console's overview jumps to a slide; the audience sees only that slide", async () => {
+  const { presenterTab: presenter, audienceTab: audience } = browser;
+  await presenter.keys("g");
+  await presenter.waitFor("!document.querySelector('.p-overview').hidden");
+  assert.equal(await presenter.eval("document.querySelectorAll('.p-thumb').length"), 4);
+  assert.deepEqual(
+    await presenter.eval("[...document.querySelectorAll('.p-thumb-num')].map((n) => n.textContent)"),
+    ["1", "2", "ausgeblendet", "3"],
+  );
+  // the current slide is marked and has the focus
+  assert.equal(await presenter.eval("[...document.querySelectorAll('.p-thumb')].findIndex((b) => b.classList.contains('current'))"), 3);
+  assert.equal(await presenter.eval("document.activeElement.getAttribute('aria-label')"), "Folie 3");
+  // only in the console
+  assert.equal(await audience.eval("!!document.querySelector('.p-overview, .p-thumb')"), false);
+  assert.equal(await audience.eval("location.hash"), "#4");
+  await shot(presenter, "09b-presenter-overview");
+  // arrows move (here in one row), Enter jumps and closes it
+  await presenter.keys(Keys.left);
+  await presenter.keys(Keys.left);
+  assert.equal(await presenter.eval("document.activeElement.getAttribute('aria-label')"), "Folie 2");
+  assert.equal(await audience.eval("location.hash"), "#4", "moving in the overview does not move the audience");
+  await presenter.keys(Keys.enter);
+  await audience.waitFor("location.hash === '#2'", 5000);
+  assert.equal(await presenter.eval("document.querySelector('.p-overview').hidden"), true);
+  assert.match(await presenter.eval("document.querySelector('.p-label').textContent"), /^Folie 2 \/ 3/);
+  // a click jumps; Esc closes without jumping
+  await presenter.eval("document.querySelector('button[title^=\"Alle Folien\"]').click()");
+  await presenter.waitFor("!document.querySelector('.p-overview').hidden");
+  await presenter.eval("document.querySelectorAll('.p-thumb')[0].click()");
+  await audience.waitFor("location.hash === '#1'", 5000);
+  await presenter.keys("g");
+  await presenter.waitFor("!document.querySelector('.p-overview').hidden");
+  await presenter.keys(Keys.right);
+  await presenter.keys(Keys.escape);
+  await presenter.waitFor("document.querySelector('.p-overview').hidden");
+  assert.equal(await audience.eval("location.hash"), "#1");
+  // a number and Enter, counting the shown slides
+  await presenter.keys("3");
+  await presenter.keys(Keys.enter);
+  await audience.waitFor("location.hash === '#4'", 5000);
+  await presenter.waitFor("document.querySelector('.p-label').textContent.startsWith('Folie 3 / 3')");
 });
 
 test("the presenter console shows the remote's address as a QR code", async () => {

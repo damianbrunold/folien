@@ -1,5 +1,7 @@
 // The presenter console: the current slide (as the audience sees it),
-// what the next click shows, the notes, a timer and the clock. It opens
+// what the next click shows, the notes, a timer and the clock; an
+// overview of all slides (G) to jump to one, which only the console
+// shows: the audience sees the slide jumped to. It opens
 // the presentation window for the audience (move it to the projector and
 // press F there) and keeps it in step; both windows take the same keys.
 // The remote control (a phone) follows and steers both through the
@@ -50,13 +52,14 @@ function storage(key, value) {
 
 // The console for doc in root. opts: deck ({id, title}), doc, design,
 // assetUrl(sha), previewUrl(sha) (images of the next slide's preview;
-// default assetUrl), presentUrl (the audience window's page), exitUrl
+// default assetUrl), thumbUrl(sha) (the overview's; default previewUrl), presentUrl (the audience window's page), exitUrl
 // (or a function of the position: where "Beenden" goes), exitTitle, eventsUrl and remoteUrl, deckUrl (the server: remote control
 // and its QR code; none: no remote), windows (talk to the audience window
 // directly: see Sync).
 export function startPresenter(root, opts) {
   const { deck, doc, design, assetUrl } = opts;
   const previewUrl = opts.previewUrl || assetUrl;
+  const thumbUrl = opts.thumbUrl || previewUrl;
   document.title = deck.title + " (Referentenansicht) · Folien";
 
   // --- layout ---
@@ -67,6 +70,8 @@ export function startPresenter(root, opts) {
   const conn = el("span", "p-conn", "");
   const audienceBtn = button("Publikumsfenster öffnen", "Die Präsentation in einem eigenen Fenster", openAudience, "primary");
   const pauseBtn = button("Pause", "Zeit anhalten", togglePause);
+  const overviewBtn = button("Übersicht", "Alle Folien, um zu einer zu springen (G)", () => toggleOverview());
+  overviewBtn.setAttribute("aria-expanded", "false");
   const header = el("header", "p-header");
   header.append(
     title,
@@ -77,6 +82,7 @@ export function startPresenter(root, opts) {
     button("↺", "Zeit zurücksetzen", resetTimer),
     now,
     conn,
+    overviewBtn,
     opts.remoteUrl
       ? button("Fernbedienung", "Fernbedienung auf einem anderen Gerät öffnen", showRemote)
       : el("span"),
@@ -111,8 +117,14 @@ export function startPresenter(root, opts) {
       location.href = typeof opts.exitUrl === "function" ? opts.exitUrl(pos) : opts.exitUrl;
     }),
   );
+  // The overview: over the current slide and the side, until a slide is
+  // chosen or Esc.
+  const overview = el("div", "p-overview");
+  overview.hidden = true;
+  overview.setAttribute("role", "dialog");
+  overview.setAttribute("aria-label", "Alle Folien");
   const main = el("main", "p-main");
-  main.append(current, side);
+  main.append(current, side, overview);
   root.replaceChildren(header, main, footer);
 
   // --- state ---
@@ -284,15 +296,111 @@ export function startPresenter(root, opts) {
     close.focus();
   }
 
+  // --- overview ---
+  // The thumbnails are drawn the first time it opens.
+  let thumbs = null;
+  function buildThumbs() {
+    let shown = 0;
+    thumbs = doc.slides.map((slide, i) => {
+      const b = el("button", "p-thumb");
+      b.type = "button";
+      b.tabIndex = -1;
+      const num = slide.hidden ? "ausgeblendet" : String(++shown);
+      b.setAttribute("aria-label", slide.hidden ? "Ausgeblendete Folie (" + (i + 1) + ")" : "Folie " + num);
+      if (slide.hidden) b.classList.add("hidden-slide");
+      const f = el("div", "slide-frame");
+      b.append(el("span", "p-thumb-num", num), f);
+      b.addEventListener("click", () => jumpTo(i));
+      overview.appendChild(b);
+      fitInto(f, renderSlide(slide, design, { assetUrl: thumbUrl, doc, index: i }));
+      return b;
+    });
+  }
+
+  function overviewOpen() {
+    return !overview.hidden;
+  }
+
+  function toggleOverview(open = !overviewOpen()) {
+    overview.hidden = !open;
+    overviewBtn.setAttribute("aria-expanded", String(open));
+    overviewBtn.classList.toggle("primary", open);
+    if (!open) return;
+    if (!thumbs) buildThumbs();
+    thumbs.forEach((b, i) => b.classList.toggle("current", i === pos.slide));
+    focusThumb(pos.slide);
+  }
+
+  function focusThumb(i) {
+    const k = Math.max(0, Math.min(thumbs.length - 1, i));
+    thumbs.forEach((b, j) => (b.tabIndex = j === k ? 0 : -1));
+    thumbs[k].focus();
+    thumbs[k].scrollIntoView({ block: "nearest" });
+  }
+
+  function jumpTo(i) {
+    toggleOverview(false);
+    go(nav.slideStart(doc, i), "self");
+    overviewBtn.focus();
+  }
+
+  // Keys while the overview is open: arrows move, Enter or Space jump,
+  // Esc or G close it.
+  function overviewKey(e) {
+    const at = thumbs.indexOf(document.activeElement);
+    const i = at >= 0 ? at : pos.slide;
+    // thumbnails in a row: those level with the first
+    const cols = Math.max(1, thumbs.filter((b) => b.offsetTop === thumbs[0].offsetTop).length);
+    const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols };
+    if (e.key in moves) focusThumb(i + moves[e.key]);
+    else if (e.key === "Home") focusThumb(0);
+    else if (e.key === "End") focusThumb(thumbs.length - 1);
+    else if (e.key === "Enter" || e.key === " ") jumpTo(i);
+    else if (e.key === "Escape" || e.key === "g" || e.key === "G") {
+      toggleOverview(false);
+      overviewBtn.focus();
+    } else if (e.key !== "Tab") return;
+    if (e.key !== "Tab") e.preventDefault();
+  }
+
   installShortcutHelp("Tastenkürzel in der Referentenansicht", () => [
     [
       "Präsentation steuern",
-      [...PRESENT_KEYS, ["Tab", "Zu den Knöpfen (Zeit, Notizen, Schwarz …)"], ["? / F1", "Diese Hilfe"]],
+      [
+        ...PRESENT_KEYS,
+        ["G", "Übersicht aller Folien (Pfeiltasten, Enter springt, Esc schliesst)"],
+        ["Tab", "Zu den Knöpfen (Zeit, Notizen, Schwarz …)"],
+        ["? / F1", "Diese Hilfe"],
+      ],
     ],
   ]);
 
+  // A number typed before Enter jumps to that slide (counting the shown
+  // ones, as the label does).
+  let digits = "";
   document.addEventListener("keydown", (e) => {
     if (shortcutHelpOpen() || e.target.closest("input, textarea, select")) return;
+    if (overviewOpen()) {
+      overviewKey(e);
+      return;
+    }
+    if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      digits += e.key;
+      return;
+    }
+    if (e.key === "Enter" && digits) {
+      const i = nav.slideByNumber(doc, parseInt(digits, 10));
+      digits = "";
+      e.preventDefault();
+      if (i !== null) go(nav.slideStart(doc, i), "self");
+      return;
+    }
+    digits = "";
+    if ((e.key === "g" || e.key === "G") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleOverview(true);
+      return;
+    }
     const what = presentKey(e);
     if (what && what !== "fullscreen") {
       e.preventDefault();

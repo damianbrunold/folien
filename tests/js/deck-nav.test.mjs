@@ -50,3 +50,12 @@ test("clamping untrusted positions", () => {
   assert.equal(nav.slideLabel(doc, P(3, 0)), "3 / 3");
   assert.equal(nav.slideLabel(doc, P(2, 0)), "3 / 3");
 });
+
+test("slide numbers count the shown slides", () => {
+  assert.equal(nav.slideByNumber(doc, 1), 0);
+  assert.equal(nav.slideByNumber(doc, 2), 1);
+  assert.equal(nav.slideByNumber(doc, 3), 3); // the hidden one is skipped
+  assert.equal(nav.slideByNumber(doc, 4), null);
+  assert.equal(nav.slideByNumber(doc, 0), null);
+  assert.equal(nav.slideByNumber(doc, NaN), null);
+});
