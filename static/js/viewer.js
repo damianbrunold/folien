@@ -16,17 +16,28 @@ import {
 } from "./render.js";
 import { installShortcutHelp, isTyping } from "./shortcuts.js";
 import { remoteQrParts } from "./remote-qr.js";
+import { wireMenus } from "./menus.js";
 
 const root = document.getElementById("viewer");
 
-// The "QR-Code" button beside "Fernbedienung": shows or hides the
-// remote's address as a QR code below the actions.
+// "Fernbedienung" shows or hides the remote's QR code below the actions
+// (for the phone) instead of opening the remote here; the box has the
+// plain address too.
 function wireRemoteQr() {
   const btn = document.querySelector(".js-remote-qr");
   if (!btn) return;
-  btn.hidden = false;
+  const remoteUrl = btn.getAttribute("href");
+  btn.setAttribute("role", "button");
+  btn.setAttribute("aria-expanded", "false");
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === " ") {
+      e.preventDefault();
+      btn.click();
+    }
+  });
   let box = null;
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
     if (box) {
       box.remove();
       box = null;
@@ -36,12 +47,13 @@ function wireRemoteQr() {
     box = document.createElement("div");
     box.id = "remote-qr-box";
     box.className = "remote-qr-box";
-    box.append(...remoteQrParts(btn.dataset.remoteUrl, root.dataset.deckUrl));
+    box.append(...remoteQrParts(remoteUrl, root.dataset.deckUrl));
     btn.closest(".actions").after(box);
     btn.setAttribute("aria-expanded", "true");
   });
 }
 wireRemoteQr();
+wireMenus();
 
 async function getJSON(url) {
   const r = await fetch(url, { headers: { Accept: "application/json" } });

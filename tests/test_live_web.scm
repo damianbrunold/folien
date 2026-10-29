@@ -236,7 +236,22 @@
                  (r (qr "https%3A%2F%2Ffolien.example.org" carol)))
             (test-assert "the deck page offers it"
               (has? (body (send "GET" (string-append "/decks/" id) carol))
-                    (string-append "data-remote-url=\"/decks/" id "/remote\"")))
+                    (string-append "class=\"button small js-remote-qr\" href=\"/decks/" id "/remote\"")))
+            ;; the overview: what it is, the main actions, the rest in a
+            ;; menu; no link to itself, export only in its section
+            (let* ((page (body (send "GET" (string-append "/decks/" id) carol)))
+                   (row-start (string-contains-from page "overview-actions" 0))
+                   (row-end (string-contains-from page "id=\"viewer\"" 0))
+                   (row (substring page row-start row-end)))
+              (test-assert (has? page "<p class=\"eyebrow\">Übersicht</p>"))
+              (test-assert "Bearbeiten first, as the main action"
+                (has? row (string-append "primary-link\" href=\"/decks/" id "/edit\">Bearbeiten")))
+              (test-assert (has? row (string-append "href=\"/decks/" id "/present\">Präsentieren")))
+              (test-assert (has? row "<details class=\"menu\">"))
+              (test-assert (has? row "Archivieren"))
+              (test-assert "no link to itself" (not (has? row (string-append "href=\"/decks/" id "\""))))
+              (test-assert "ZIP only in the export section" (not (has? row "export.zip")))
+              (test-assert (has? page "export.zip")))
             (test-equal 200 (status r))
             (test-equal "image/svg+xml" (http-response-header r "Content-Type"))
             (test-assert (has? (body r) "<svg"))

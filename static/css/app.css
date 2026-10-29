@@ -424,3 +424,16 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 .remote-qr-about { margin: 0; max-width: 32rem; }
 .remote-qr-status { margin: 0.4rem 0 0; font-size: 0.9rem; }
 .remote-qr-status:empty { display: none; }
+
+/* The overview (deck page): which page this is, above the title; its "⋯"
+   menu sits with the buttons, not pushed to the right edge. */
+.eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.overview-actions details.menu { margin-left: 0; }
+.overview-actions form.inline { margin: 0; }

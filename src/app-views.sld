@@ -123,46 +123,6 @@
                     (class ,(if (pair? classes) (car classes) "small")))
                  ,label)))
 
-    (define (zip-link id)
-      `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
-             (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
-          "ZIP"))
-
-    ;; The actions on a deck for the user's role (owner, edit, view).
-    (define (deck-actions status id . role)
-      (define r (if (pair? role) (car role) "owner"))
-      (cond
-        ((not (string=? r "owner"))
-         (append
-          (if (and (string=? r "edit") (string=? status "active"))
-              (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/edit"))))
-                        "Bearbeiten"))
-              '())
-          (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
-                (action-button id "/duplicate" "Kopie für mich")
-                (zip-link id))))
-        ((string=? status "active")
-         (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/edit"))))
-                  "Bearbeiten")
-               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
-               (action-button id "/duplicate" "Duplizieren")
-               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
-                      (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
-                   "ZIP")
-               (action-button id "/archive" "Archivieren")
-               (action-button id "/trash" "Löschen" "small danger")))
-        ((string=? status "archived")
-         (list `(a (@ (class "button small") (href ,(url (string-append "/decks/" id)))) "Ansehen")
-               (action-button id "/duplicate" "Duplizieren")
-               `(a (@ (class "button small") (href ,(url (string-append "/decks/" id "/export.zip")))
-                      (title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player"))
-                   "ZIP")
-               (action-button id "/restore" "Reaktivieren")
-               (action-button id "/trash" "Löschen" "small danger")))
-        (else
-         (list (action-button id "/restore" "Wiederherstellen")
-               (action-button id "/delete" "Endgültig löschen" "small danger")))))
-
     (define (role-label role)
       (cond ((equal? role "edit") "darf bearbeiten")
             ((equal? role "view") "darf ansehen")
@@ -204,6 +164,50 @@
 
     (define zip-title "Alles als ZIP: Folien, Bilder, PDFs, Offline-Player")
 
+    ;; The overview's actions (the deck page): the main ones as buttons
+    ;; (Bearbeiten where the user may edit, presenting, the remote), the
+    ;; rest in a "⋯" menu as on the cards. Export is in its own section.
+    (define (overview-actions status id role)
+      (let* ((edit? (and (string=? status "active") (member role '("owner" "edit")) #t))
+             (button-link (lambda (path label primary? . attrs)
+                            `(a (@ (class ,(if primary? "button small primary-link" "button small"))
+                                   (href ,(deck-path id path)) ,@attrs)
+                                ,label)))
+             (presenting
+              (if (string=? status "trashed")
+                  '()
+                  (list (button-link "/present" "Präsentieren" (not edit?))
+                        (button-link "/presenter" "Referentenansicht" #f)
+                        ;; viewer.js shows the QR code instead of following
+                        ;; the link (it needs the browser's address)
+                        `(a (@ (class "button small js-remote-qr") (href ,(deck-path id "/remote"))
+                               (aria-controls "remote-qr-box")
+                               (title "QR-Code der Fernbedienung für das Telefon"))
+                            "Fernbedienung"))))
+             (menu (cond
+                     ((not (string=? role "owner"))
+                      (list (menu-post id "/duplicate" "Kopie für mich")))
+                     ((string=? status "active")
+                      (list (menu-post id "/duplicate" "Duplizieren")
+                            (menu-post id "/archive" "Archivieren")
+                            (menu-post id "/trash" "In den Papierkorb" #t)))
+                     ((string=? status "archived")
+                      (list (menu-post id "/restore" "Reaktivieren")
+                            (menu-post id "/duplicate" "Duplizieren")
+                            (menu-post id "/trash" "In den Papierkorb" #t)))
+                     (else
+                      (list (menu-post id "/delete" "Endgültig löschen" #t))))))
+        `(,@(if edit? (list (button-link "/edit" "Bearbeiten" #t)) '())
+          ,@(if (string=? status "trashed")
+                (list `(form (@ (method "post") (action ,(deck-path id "/restore")) (class "inline"))
+                         (button (@ (type "submit") (class "small")) "Wiederherstellen")))
+                '())
+          ,@presenting
+          (details (@ (class "menu"))
+            (summary (@ (class "button small") (aria-label "Weitere Aktionen") (title "Weitere Aktionen"))
+                     "⋯")
+            (div (@ (class "menu-list")) ,@menu)))))
+
     ;; (main-actions . menu-items) of a deck in a list, for the user's role.
     (define (card-actions status id role)
       (let ((open-btn (lambda (path label primary?)
@@ -215,13 +219,13 @@
            (cons (if (and (string=? role "edit") (string=? status "active"))
                      (list (open-btn "/edit" "Bearbeiten" #t))
                      (list (open-btn "" "Ansehen" #t)))
-                 (list (menu-link (deck-path id) "Ansehen")
+                 (list (menu-link (deck-path id) "Übersicht")
                        (menu-link (deck-path id "/present") "Präsentieren")
                        (menu-post id "/duplicate" "Kopie für mich")
                        (menu-link (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title))))
           ((string=? status "active")
            (cons (list (open-btn "/edit" "Bearbeiten" #t))
-                 (list (menu-link (deck-path id) "Ansehen und exportieren")
+                 (list (menu-link (deck-path id) "Übersicht und Export")
                        (menu-link (deck-path id "/present") "Präsentieren")
                        (menu-post id "/duplicate" "Duplizieren")
                        (menu-link (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title)
@@ -439,6 +443,7 @@
           `(section
              (div (@ (class "deck-head"))
                (div
+                 (p (@ (class "eyebrow")) "Übersicht")
                  (h2 ,(col deck "title"))
                  (p (@ (class "muted"))
                     ,(design-name (col deck "design")) " · "
@@ -451,21 +456,8 @@
                          ""
                          (string-append " · von " (col deck "owner_name") ", Sie dürfen "
                                         (if (equal? role "edit") "bearbeiten" "ansehen")))))
-               (div (@ (class "actions"))
-                 (a (@ (class "button small primary-link")
-                       (href ,(url (string-append "/decks/" id "/present"))))
-                    "Präsentieren")
-                 (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/presenter"))))
-                    "Referentenansicht")
-                 (a (@ (class "button small") (href ,(url (string-append "/decks/" id "/remote"))))
-                    "Fernbedienung")
-                 ;; shown by viewer.js (the code needs the browser's address)
-                 (button (@ (type "button") (class "small js-remote-qr") (hidden #t)
-                            (aria-expanded "false") (aria-controls "remote-qr-box")
-                            (data-remote-url ,(url (string-append "/decks/" id "/remote")))
-                            (title "QR-Code der Fernbedienung für das Telefon"))
-                   "QR-Code")
-                 ,@(deck-actions status id role)))
+               (div (@ (class "actions overview-actions"))
+                 ,@(overview-actions status id role)))
              ,(notice msg)
              (div (@ (id "viewer") (class "viewer")
                      (data-deck-url ,(url (string-append "/api/decks/" id)))

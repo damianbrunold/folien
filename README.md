@@ -116,7 +116,7 @@ Needs dabscm 2.7.1 or later.
 ## PDF export
 
 `GET /decks/<id>/export.pdf?per-page=1|2|4&notes=0|1&builds=final|steps`
-(the form on the deck page). The PDF is drawn natively with `(scm pdf)`
+(the form on the deck overview, "Übersicht"). The PDF is drawn natively with `(scm pdf)`
 from the same document model the browser renders: the design's family
 (Inter with the same OpenType features, or Roboto Slab), written as TrueType by `(scm truetype)` and embedded
 (subset), kerned; text broken into lines by `(scm text layout)` with the
@@ -128,7 +128,7 @@ deck to look at.
 
 ## PowerPoint export
 
-`GET /decks/<id>/export.pptx` (on the deck page; also `exports/folien.pptx`
+`GET /decks/<id>/export.pptx` (on the overview; also `exports/folien.pptx`
 in a bundle) writes every element as a positioned PowerPoint object with
 `(scm ooxml presentation)`: text boxes with the deck's formatting (bullets,
 numbering, links), tables, shapes, lines, pictures (fitted or cropped as on the
@@ -141,7 +141,7 @@ otherwise.
 
 ## Bundles
 
-`GET /decks/<id>/export.zip` (ZIP in the lists, on the deck page) gives
+`GET /decks/<id>/export.zip` (in the lists' menus and the overview's export section) gives
 everything in one file: `manifest.json`, `presentation.json`, `assets/`,
 `exports/` (slides, notes, 2 and 4 per page as PDF), `player/index.html`
 (the presentation, offline, straight from the file system; its script is
@@ -178,7 +178,7 @@ buffering for the event stream.
 
 ### The remote by QR code
 
-The presenter console's "Fernbedienung" and the deck page's "QR-Code"
+"Fernbedienung" in the presenter console and on the overview
 show a QR code (`GET /decks/<id>/remote-qr.svg?origin=…`, drawn with
 dabscm's `(scm qr)`): scanned with a phone's camera it opens the remote
 without signing in. The code holds a remote link, a token
@@ -294,7 +294,7 @@ slide; while typing Ctrl+Enter goes to the next text field (after the
 last: a new slide), Ctrl+Shift+8/7 make lists, Ctrl+Shift+L/E/R/J align,
 Ctrl+Shift+. and , change the size, Ctrl+K links; Ctrl+M adds a slide,
 Ctrl+arrows in the slide list move it; F5, Shift+F5 and Alt+F5 present
-(from the start, from here, presenter console), also on the deck page;
+(from the start, from here, presenter console), also on the overview;
 Esc ends a presentation (its window closes when the editor or the deck
 page opened it).
 The presentation list: arrows between the cards, `/` searches, `n`

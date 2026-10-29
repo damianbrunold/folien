@@ -8,6 +8,7 @@
 import "./import.js";
 import { designMap, fitInto, renderSlide } from "./render.js";
 import { installShortcutHelp, isTyping } from "./shortcuts.js";
+import { wireMenus } from "./menus.js";
 
 const grid = document.querySelector(".deck-grid");
 
@@ -41,26 +42,6 @@ async function drawThumbs() {
   for (const f of frames) io.observe(f);
 }
 
-function wireMenus() {
-  const menus = [...document.querySelectorAll("details.menu")];
-  for (const m of menus) {
-    m.addEventListener("toggle", () => {
-      if (m.open) for (const other of menus) if (other !== m) other.open = false;
-    });
-  }
-  document.addEventListener("click", (e) => {
-    for (const m of menus) if (m.open && !m.contains(e.target)) m.open = false;
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    for (const m of menus) {
-      if (!m.open) continue;
-      m.open = false;
-      m.querySelector("summary").focus();
-    }
-  });
-}
-
 // Arrows from card to card (focus on the card's title link): left and
 // right in reading order, up and down to the nearest card of the row
 // above or below.
@@ -69,17 +50,8 @@ function wireCardKeys() {
     if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
     const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
     if (!arrows.includes(e.key)) return;
-    // in an open menu: up and down through its items
-    const menu = e.target.closest("details.menu[open]");
-    if (menu) {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-      const items = [...menu.querySelectorAll(".menu-list a, .menu-list button")];
-      const i = items.indexOf(e.target);
-      const j = i < 0 ? 0 : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-      if (items[j]) items[j].focus();
-      e.preventDefault();
-      return;
-    }
+    // in an open menu, menus.js moves through its items
+    if (e.target.closest("details.menu[open]")) return;
     const cards = [...grid.querySelectorAll(".deck-card")];
     const card = e.target.closest(".deck-card");
     const i = cards.indexOf(card);
