@@ -9,6 +9,7 @@ import "./import.js";
 import { designMap, fitInto, renderSlide } from "./render.js";
 import { installShortcutHelp, isTyping } from "./shortcuts.js";
 import { wireMenus } from "./menus.js";
+import { wireDownloads } from "./downloads.js";
 
 const grid = document.querySelector(".deck-grid");
 
@@ -110,5 +111,6 @@ wirePageKeys();
 if (grid) {
   drawThumbs();
   wireMenus();
+  wireDownloads();
   wireCardKeys();
 }

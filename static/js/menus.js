@@ -1,11 +1,18 @@
 // The "⋯" menus (details.menu) of the deck lists and the overview: one
-// open at a time, closed by a click elsewhere or Escape (back to its
-// button), and Up/Down move through an open menu's items. They work as
+// open at a time, closed by a click elsewhere, on one of its links (a
+// download stays on the page) or Escape (back to its button), and
+// Up/Down move through an open menu's items. They work as
 // plain details elements without this.
 
 export function wireMenus() {
   const menus = [...document.querySelectorAll("details.menu")];
   for (const m of menus) {
+    m.addEventListener("click", (e) => {
+      if (e.target.closest(".menu-list a")) {
+        m.open = false;
+        m.querySelector("summary").focus();
+      }
+    });
     m.addEventListener("toggle", () => {
       if (m.open) for (const other of menus) if (other !== m) other.open = false;
     });

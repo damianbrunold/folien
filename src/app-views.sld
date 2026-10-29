@@ -158,6 +158,11 @@
       `(a (@ (class "menu-item") (href ,href) ,@(if (pair? title) `((title ,(car title))) '()))
           ,label))
 
+    ;; A download: static/js/downloads.js fetches it with a notice while
+    ;; the server builds the file (a plain link without script).
+    (define (menu-download href label title)
+      `(a (@ (class "menu-item js-download") (href ,href) (title ,title)) ,label))
+
     (define (menu-post id path label . danger)
       `(form (@ (method "post") (action ,(deck-path id path)))
          (button (@ (type "submit") (class ,(if (pair? danger) "menu-item menu-danger" "menu-item")))
@@ -223,20 +228,20 @@
                  (list (menu-link (deck-path id) "Übersicht")
                        (menu-link (deck-path id "/present") "Präsentieren")
                        (menu-post id "/duplicate" "Kopie für mich")
-                       (menu-link (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title))))
+                       (menu-download (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title))))
           ((string=? status "active")
            (cons (list (open-btn "/edit" "Bearbeiten" #t))
                  (list (menu-link (deck-path id) "Übersicht und Export")
                        (menu-link (deck-path id "/present") "Präsentieren")
                        (menu-post id "/duplicate" "Duplizieren")
-                       (menu-link (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title)
+                       (menu-download (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title)
                        (menu-post id "/archive" "Archivieren")
                        (menu-post id "/trash" "In den Papierkorb" #t))))
           ((string=? status "archived")
            (cons (list (open-btn "" "Ansehen" #f))
                  (list (menu-post id "/restore" "Reaktivieren")
                        (menu-post id "/duplicate" "Duplizieren")
-                       (menu-link (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title)
+                       (menu-download (deck-path id "/export.zip") "Als ZIP herunterladen" zip-title)
                        (menu-post id "/trash" "In den Papierkorb" #t))))
           (else
            (cons (list `(form (@ (method "post") (action ,(deck-path id "/restore")) (class "inline"))
@@ -551,26 +556,26 @@
                      (option (@ (value "steps")) "jeder Schritt eine Seite")))
                  (button (@ (type "submit") (class "primary")) "PDF herunterladen"))
                (p (@ (class "muted bundle-note"))
-                  (a (@ (href ,(url (string-append "/decks/" id "/export.pptx"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export.pptx"))))
                      "Als PowerPoint (.pptx) herunterladen")
                   " · "
-                  (a (@ (href ,(url (string-append "/decks/" id "/export.zip"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export.zip"))))
                      "Alles als ZIP herunterladen")
                   " – die Präsentation mit Bildern und Videos, den PDFs und einem "
                   "Player, der ohne Server im Browser läuft. Das ZIP lässt sich wieder importieren.")
                (p (@ (class "muted bundle-note"))
                   "Zum Präsentieren ohne Internet: "
-                  (a (@ (href ,(url (string-append "/decks/" id "/export.html"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export.html"))))
                      "als eine HTML-Datei")
                   " (alles darin; im Browser öffnen) oder "
-                  (a (@ (href ,(url (string-append "/decks/" id "/export-offline.zip"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export-offline.zip"))))
                      "als Ordner (ZIP)")
                   " – besser bei grossen Videos. Mit Referentenansicht (R) und Notizen; "
                   "zum Weitergeben ohne Notizen: "
-                  (a (@ (href ,(url (string-append "/decks/" id "/export.html?notes=0"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export.html?notes=0"))))
                      "HTML-Datei")
                   ", "
-                  (a (@ (href ,(url (string-append "/decks/" id "/export-offline.zip?notes=0"))))
+                  (a (@ (class "js-download") (href ,(url (string-append "/decks/" id "/export-offline.zip?notes=0"))))
                      "Ordner")
                   ". Ausgeblendete Folien sind nie dabei."))
              ,(if active?

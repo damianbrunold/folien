@@ -442,3 +442,27 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 }
 .overview-actions details.menu { margin-left: 0; }
 .overview-actions form.inline { margin: 0; }
+
+/* The notice of a download being made (static/js/downloads.js). */
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 0.4rem;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  opacity: 0;
+  transform: translateY(0.5rem);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.toast.shown { opacity: 1; transform: none; }
+.toast.success { border-left-color: var(--ok); }
+.toast.error { border-left-color: var(--danger); }
+a[aria-busy="true"] { cursor: progress; }

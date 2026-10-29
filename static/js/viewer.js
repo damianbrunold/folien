@@ -17,6 +17,7 @@ import {
 import { installShortcutHelp, isTyping } from "./shortcuts.js";
 import { remoteQrParts } from "./remote-qr.js";
 import { wireMenus } from "./menus.js";
+import { wireDownloads } from "./downloads.js";
 
 const root = document.getElementById("viewer");
 
@@ -54,6 +55,7 @@ function wireRemoteQr() {
 }
 wireRemoteQr();
 wireMenus();
+wireDownloads();
 
 // Addresses to pass on (publications) read in full, with this site's
 // origin, which only the browser knows.
