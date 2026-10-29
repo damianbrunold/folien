@@ -1,8 +1,9 @@
 ;; (app remote) — messages between the windows presenting a deck: the
 ;; presentation, the presenter console and a remote control on another
-;; device (a phone). Each listener holds a server-sent event stream
-;; (GET /api/decks/<id>/events) and gets every message posted to its deck
-;; (POST to the same URL). The messages are small JSON strings the
+;; device (a phone). Each listener is a WebSocket (GET .../socket, both
+;; ways) or a server-sent event stream (GET /api/decks/<id>/events, with
+;; POSTs to the same URL) and gets every message sent to its deck. The
+;; messages are small JSON strings the
 ;; browsers interpret (see static/js/sync.js); positions in them are
 ;; absolute, so a message that reaches two windows does no harm.
 ;;

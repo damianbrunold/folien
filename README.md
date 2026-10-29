@@ -24,6 +24,7 @@ Implemented step by step, phase by phase:
       placeholders, poster frames, media library, byte-range streaming
 - [x] Phase 5 — presenting: transitions, builds, black/white screen,
       presenter console with notes, next preview and timer, phone remote
+      (WebSocket, falling back to server-sent events)
 - [x] Phase 6 — PDF export: slides (960 × 540 pt) or A4 handouts with 2 or 4
       per page, each with or without notes; builds final or step by step
 - [x] Phase 7 — zip bundle: export (document, assets, PDFs, offline player),
@@ -107,7 +108,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.6.0 or later.
+Needs dabscm 2.7.1 or later.
 
 ## PDF export
 
@@ -160,11 +161,15 @@ number and Enter jump). The "Referentenansicht" shows the current slide,
 what the next click brings, the notes, a timer and the clock; it opens
 the audience window (drag it to the projector and press F there) and
 both stay in step over a BroadcastChannel. The "Fernbedienung" (open it
-on a phone, signed in as the same user) steers through the server:
-`GET /api/decks/<id>/events` is a server-sent event stream and `POST` to
-it sends a message (src/app-remote.sld). Every open stream holds a server
-thread (`http-max-threads`); behind nginx the `X-Accel-Buffering: no`
-header turns off buffering for it.
+on a phone, signed in as the same user) steers through the server, which
+relays every message to all windows of the deck (src/app-remote.sld):
+over a WebSocket, `GET /api/decks/<id>/socket`, both ways; where that
+cannot connect (a proxy without WebSocket support) the browsers fall back
+to `GET /api/decks/<id>/events`, a server-sent event stream, and `POST`s
+to it. Every open connection holds a server thread (`http-max-threads`);
+behind nginx the socket needs the upgrade headers of
+`deploy/nginx.conf.example`, and `X-Accel-Buffering: no` turns off
+buffering for the event stream.
 
 ## Setup
 

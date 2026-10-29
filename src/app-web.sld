@@ -15,6 +15,7 @@
 
 (define-library (app web)
   (import (scheme base)
+          (only (scheme char) string-downcase)
           (srfi 18)
           (scm crypto password)
           (scm json simple)
@@ -30,6 +31,7 @@
           (scm net http static)
           (scm net http session)
           (scm net http middleware)
+          (scm net websocket)
           (app site)
           (app db)
           (app users)
@@ -298,6 +300,57 @@
                      (send (if m (string-append "data: " m "\n\n") ": ping\n\n"))
                      (loop (if m left (- left 15)))))))
              (lambda () (unsubscribe! l)))))))
+
+    ;; The same messages over a WebSocket, both ways: what the browser
+    ;; sends is published to the deck (as POST .../events), what the deck
+    ;; gets is forwarded by a second thread. A keepalive every 25 s finds
+    ;; a client that has gone without closing, which frees the thread.
+    (define keepalive-seconds 25)
+
+    (define (event-socket deck-id)
+      (http-websocket-upgrade
+       (lambda (ws)
+         (let* ((l (subscribe! deck-id))
+                (forwarder
+                 (make-thread
+                  (lambda ()
+                    (guard (e (#t #f))          ; sending fails once the socket is closed
+                      (let loop ()
+                        (let ((m (next-message l keepalive-seconds)))
+                          (ws-send ws (or m "{\"type\":\"ping\"}"))
+                          (loop))))))))
+           (thread-start! forwarder)
+           (dynamic-wind
+             (lambda () #f)
+             (lambda ()
+               (let loop ()
+                 (let ((text (ws-receive ws)))
+                   (when text
+                     (let ((m (and (string? text) (<= (string-length text) 2000)
+                                   (clean-message (guard (e (#t #f)) (json-parse text))))))
+                       (when m (publish! deck-id (json->string m))))
+                     (loop)))))
+             (lambda ()
+               (unsubscribe! l)
+               (ws-close ws)))))))
+
+    ;; A browser sends the page's origin with a WebSocket handshake; one
+    ;; from another site is refused (the session cookie is SameSite=Strict
+    ;; as well). Clients that send none (not browsers) are let through.
+    (define (same-origin? req)
+      (let ((origin (http-request-header req "Origin"))
+            (host (http-request-header req "Host")))
+        (or (not origin)
+            (and host
+                 (let ((h (let ((i (string-search "://" origin)))
+                            (if i (substring origin (+ i 3) (string-length origin)) origin))))
+                   (string=? (string-downcase h) (string-downcase host)))))))
+
+    (define (string-search part s)
+      (let loop ((i 0))
+        (cond ((> (+ i (string-length part)) (string-length s)) #f)
+              ((string=? (substring s i (+ i (string-length part))) part) i)
+              (else (loop (+ i 1))))))
 
     (define (make-app settings)
       "Syntax: (make-app settings)
@@ -763,6 +816,15 @@ Description: Builds the app's request handler. settings is an alist:
                 (if (deck-status db (col user "id") id)
                     (event-stream id)
                     (json-error 404 "no such deck"))))))
+
+        ;; The same, both ways, over one WebSocket (preferred by sync.js).
+        (route! "GET" "/api/decks/:id/socket"
+          (api-signed-in
+            (lambda (req params user)
+              (let ((id (params-ref params "id")))
+                (cond ((not (deck-status db (col user "id") id)) (json-error 404 "no such deck"))
+                      ((not (same-origin? req)) (json-error 403 "cross-site request"))
+                      (else (event-socket id)))))))
 
         (route! "POST" "/api/decks/:id/events"
           (api-signed-in

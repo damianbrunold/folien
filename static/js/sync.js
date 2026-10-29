@@ -3,12 +3,15 @@
 // remote control on another device.
 //
 // Windows on the same computer talk over a BroadcastChannel; everything
-// else goes through the server: POST <deck api>/events, received by every
-// window as server-sent events (GET <deck api>/events). Messages:
+// else goes through the server, which relays each message to every window
+// of the deck: over a WebSocket (<deck api>/socket) both ways, or, where
+// that cannot connect (a proxy without WebSocket support), as server-sent
+// events (GET <deck api>/events) and POSTs to the same URL. Messages:
 //   {type: "state", pos, blank}  where a window is now
 //   {type: "goto", pos}          please go there (from the remote)
 //   {type: "blank", blank}       null, "black" or "white"
 //   {type: "hello"}              a window started: tell it the state
+//   {type: "ping"}               the server's keepalive (ignored)
 // Positions are absolute, so a message that arrives twice (directly and
 // through the server) does no harm.
 
@@ -27,20 +30,61 @@ export class Sync {
     } catch (e) {
       this.bc = null; // no channel (an old browser, or a page opened from a file)
     }
-    if (opts.remote !== false && typeof EventSource !== "undefined") {
-      this.es = new EventSource(opts.eventsUrl);
-      this.es.onmessage = (e) => {
-        let m;
-        try {
-          m = JSON.parse(e.data);
-        } catch (err) {
-          return;
-        }
-        if (m && m.from !== this.id) opts.onMessage(m, "remote");
-      };
-      this.es.onopen = () => opts.onConnection && opts.onConnection(true);
-      this.es.onerror = () => opts.onConnection && opts.onConnection(false);
+    this.closed = false;
+    if (opts.remote !== false && opts.eventsUrl) {
+      if (typeof WebSocket !== "undefined") this.openSocket(0);
+      else this.openEvents();
     }
+  }
+
+  // A message from the server, as text.
+  received(data) {
+    let m;
+    try {
+      m = JSON.parse(data);
+    } catch (err) {
+      return;
+    }
+    if (m && m.type !== "ping" && m.from !== this.id) this.opts.onMessage(m, "remote");
+  }
+
+  socketUrl() {
+    const u = new URL(this.opts.eventsUrl.replace(/\/events$/, "/socket"), location.href);
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    return u.href;
+  }
+
+  // The WebSocket; after a drop it reconnects (waiting longer each time).
+  // One that never opened gives way to server-sent events for good.
+  openSocket(attempt) {
+    let opened = false;
+    const ws = new WebSocket(this.socketUrl());
+    this.ws = ws;
+    ws.onopen = () => {
+      opened = true;
+      attempt = 0;
+      if (this.opts.onConnection) this.opts.onConnection(true);
+    };
+    ws.onmessage = (e) => this.received(e.data);
+    ws.onclose = () => {
+      if (this.ws === ws) this.ws = null;
+      if (this.closed) return;
+      if (this.opts.onConnection) this.opts.onConnection(false);
+      if (!opened && attempt === 0) {
+        this.openEvents();
+      } else {
+        const wait = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5));
+        this.retry = setTimeout(() => this.openSocket(attempt + 1), wait);
+      }
+    };
+  }
+
+  openEvents() {
+    if (typeof EventSource === "undefined") return;
+    this.es = new EventSource(this.opts.eventsUrl);
+    this.es.onmessage = (e) => this.received(e.data);
+    this.es.onopen = () => this.opts.onConnection && this.opts.onConnection(true);
+    this.es.onerror = () => this.opts.onConnection && this.opts.onConnection(false);
   }
 
   // To the other windows on this computer.
@@ -50,11 +94,18 @@ export class Sync {
 
   // Through the server, to all windows of the deck anywhere.
   remote(msg) {
-    if (!this.es) return Promise.resolve();
+    const text = JSON.stringify(Object.assign({}, msg, { from: this.id }));
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(text);
+      return Promise.resolve();
+    }
+    if (this.opts.remote === false || !this.opts.eventsUrl) return Promise.resolve();
+    // Not connected (yet): the server relays a POST to the WebSocket
+    // listeners as well.
     return fetch(this.opts.eventsUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({}, msg, { from: this.id })),
+      body: text,
     }).catch(() => {});
   }
 
@@ -64,7 +115,10 @@ export class Sync {
   }
 
   close() {
+    this.closed = true;
+    clearTimeout(this.retry);
     if (this.bc) this.bc.close();
+    if (this.ws) this.ws.close();
     if (this.es) this.es.close();
   }
 }

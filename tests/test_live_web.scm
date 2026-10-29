@@ -389,6 +389,56 @@
                                         "listeners"))
                     (test-assert (has? (read-until "\"w1\"}")
                                        "data: {\"type\":\"state\",\"pos\":{\"slide\":0,\"step\":1},\"blank\":\"black\",\"from\":\"w1\"}"))
+                    ;; The WebSocket: messages both ways, mixed with the
+                    ;; event stream and POSTs.
+                    (let* ((socket-url (string-append api "/socket"))
+                           (handshake
+                            (lambda (origin)
+                              (let* ((ws (tcp-connect "127.0.0.1" 18190))
+                                     (wout (socket-binary-output-port ws))
+                                     (win (socket-binary-input-port ws)))
+                                (write-bytevector
+                                 (string->utf8
+                                  (string-append "GET " socket-url " HTTP/1.1\r\nHost: 127.0.0.1:18190\r\n"
+                                                 "Cookie: " carol "\r\nOrigin: " origin "\r\n"
+                                                 "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                                                 "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                                                 "Sec-WebSocket-Version: 13\r\n\r\n"))
+                                 wout)
+                                (flush-output-port wout)
+                                (let loop ((acc '()))
+                                  (let ((b (read-u8 win)))
+                                    (if (or (eof-object? b)
+                                            (and (>= (length acc) 3) (= b 10) (equal? (list (car acc) (cadr acc) (caddr acc)) '(13 10 13))))
+                                        (list ws wout win (utf8->string (apply bytevector (reverse acc))))
+                                        (loop (cons b acc))))))))
+                           ;; a masked text frame (key 0 0 0 0: masking is a no-op)
+                           (send-frame
+                            (lambda (wout text)
+                              (let ((b (string->utf8 text)))
+                                (write-bytevector (bytevector-append (bytevector #x81 (+ 128 (bytevector-length b)) 0 0 0 0) b) wout)
+                                (flush-output-port wout))))
+                           (read-frame
+                            (lambda (win)
+                              (let* ((b0 (read-u8 win)) (n (modulo (read-u8 win) 128))
+                                     (n (if (= n 126) (+ (* 256 (read-u8 win)) (read-u8 win)) n)))
+                                (cons (modulo b0 16) (utf8->string (read-bytevector n win))))))
+                           (w (handshake "http://127.0.0.1:18190")))
+                      (test-assert "upgraded" (has? (list-ref w 3) "101 Switching Protocols"))
+                      (send-frame (list-ref w 1) "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"from\":\"w2\"}")
+                      (test-assert "the event stream gets the socket's message"
+                        (has? (read-until "\"w2\"}") "\"type\":\"goto\""))
+                      (test-equal "relayed (to the sender too)"
+                        '(1 . "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"blank\":null,\"from\":\"w2\"}")
+                        (read-frame (list-ref w 2)))
+                      (send-frame (list-ref w 1) "{\"type\":\"eval\"}")      ; dropped
+                      (test-equal "a POST reaches the socket" 2
+                        (jref (json-body (send-json "POST" events carol '(("type" . "hello") ("from" . "w3")))) "listeners"))
+                      (test-equal '(1 . "{\"type\":\"hello\",\"blank\":null,\"from\":\"w3\"}") (read-frame (list-ref w 2)))
+                      (socket-close (car w))
+                      (let ((evil (handshake "https://evil.example")))
+                        (test-assert "another site: refused" (has? (list-ref evil 3) "403"))
+                        (socket-close (car evil))))
                     (socket-close s)))
                 (lambda () (server-stop server)))))
 
