@@ -5,7 +5,9 @@
 ;; it (presentation_assets). Its type comes from its first bytes, never
 ;; from the client: PNG, JPEG, GIF, WebP and SVG images, MP4 and WebM
 ;; videos. Large uploads arrive spooled to a temporary file by the HTTP
-;; server and are moved into place without being read into memory.
+;; server and are moved into place without being read into memory. PNGs
+;; and JPEGs must decode ((app images)), and their size is measured here
+;; (as shown, EXIF orientation applied), not taken from the client.
 
 (define-library (app assets)
   (import (scheme base)
@@ -15,6 +17,7 @@
           (scm crypto)
           (scm net http request)
           (app db)
+          (app images)
           (app users))           ; col
   (export store-upload!
           store-asset-file!
@@ -171,20 +174,39 @@ Description: The file extension for an accepted content type."
               deck-id sha name)))
         (deck-asset-row db deck-id sha)))
 
+    (define (read-all path)
+      (let* ((p (open-binary-input-file path))
+             (bv (read-bytevector (file-size path) p)))
+        (close-port p)
+        (if (eof-object? bv) (bytevector) bv)))
+
+    ;; For a PNG or JPEG: its (width . height) as strings, or the symbol
+    ;; check-image gives for one that is unusable. Others: the client's.
+    (define (measured mime bytes width height)
+      (if (raster-mime? mime)
+          (let ((r (check-image (bytes))))
+            (if (pair? r)
+                (cons (number->string (car r)) (number->string (cdr r)))
+                r))
+          (cons width height)))
+
     (define (store-asset-file! db data-dir deck-id path name width height)
       "Syntax: (store-asset-file! db data-dir deck-id path name width height)
 Library: (app assets)
 Description: Stores the file at path (which it moves away) as an asset
-  of the deck and returns its row, or 'empty or 'unsupported as
-  store-upload! does (the file then stays)."
+  of the deck and returns its row, or 'empty, 'unsupported, 'invalid or
+  'too-large as store-upload! does (the file then stays)."
       (let* ((size (file-size path))
              (mime (and (> size 0) (sniff-mime (file-head path)))))
         (cond
           ((= size 0) 'empty)
           ((not mime) 'unsupported)
           (else
-           (place-and-link! db data-dir deck-id (file-sha path) mime size name width height
-                            (lambda (tmp) (move-file path tmp)))))))
+           (let ((wh (measured mime (lambda () (read-all path)) width height)))
+             (if (symbol? wh)
+                 wh
+                 (place-and-link! db data-dir deck-id (file-sha path) mime size name (car wh) (cdr wh)
+                                  (lambda (tmp) (move-file path tmp)))))))))
 
     (define (store-upload! db data-dir deck-id req name width height)
       "Syntax: (store-upload! db data-dir deck-id req name width height)
@@ -192,8 +214,10 @@ Library: (app assets)
 Description: Stores the body of req as an asset of the deck (whose owner
   the caller has checked) and returns its row: sha256, mime, size, width,
   height, name. width and height are the client's measurements (strings
-  or #f). Returns 'empty for an empty body and 'unsupported for a type
-  that is not accepted."
+  or #f; a PNG's or JPEG's are measured instead). Returns 'empty for an
+  empty body, 'unsupported for a type that is not accepted, 'invalid
+  for a PNG or JPEG that does not decode and 'too-large for one above 50
+  megapixels."
       (let ((spooled (http-request-body-file req)))
         (if spooled
             (store-asset-file! db data-dir deck-id spooled name width height)
@@ -204,9 +228,12 @@ Description: Stores the body of req as an asset of the deck (whose owner
                 ((= size 0) 'empty)
                 ((not mime) 'unsupported)
                 (else
-                 (place-and-link! db data-dir deck-id (bytevector->hex (sha256-hash bytes))
-                                  mime size name width height
-                                  (lambda (tmp) (write-bytes tmp bytes)))))))))
+                 (let ((wh (measured mime (lambda () bytes) width height)))
+                   (if (symbol? wh)
+                       wh
+                       (place-and-link! db data-dir deck-id (bytevector->hex (sha256-hash bytes))
+                                        mime size name (car wh) (cdr wh)
+                                        (lambda (tmp) (write-bytes tmp bytes)))))))))))
 
     (define asset-columns
       "a.sha256, a.mime, a.size, a.width, a.height, pa.name, pa.added_at")

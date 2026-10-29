@@ -351,7 +351,9 @@ Description: Makes a new deck for the owner from the bundle at zip-path
                                                           (->string-or-false (manifest-field manifest-assets sha "width"))
                                                           (->string-or-false (manifest-field manifest-assets sha "height")))))
                                (when (symbol? r)
-                                 (fail "Eine Datei im Archiv hat einen Typ, den Folien nicht annimmt."))))
+                                 (fail (if (memq r '(invalid too-large))
+                                           "Ein Bild im Archiv ist beschädigt oder zu gross."
+                                           "Eine Datei im Archiv hat einen Typ, den Folien nicht annimmt.")))))
                            files))
                         id))))))
             (lambda () (close-input-zip z))))))))

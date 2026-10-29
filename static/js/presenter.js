@@ -133,7 +133,7 @@ async function main() {
     if (unfitNext) unfitNext();
     if (n) {
       const s = doc.slides[n.slide];
-      unfitNext = fitInto(nextFrame, renderSlide(s, design, { step: nav.visibleOrder(s, n.step), assetUrl, doc, index: n.slide }));
+      unfitNext = fitInto(nextFrame, renderSlide(s, design, { step: nav.visibleOrder(s, n.step), assetUrl: (sha) => assetUrl(sha) + "?w=1280", doc, index: n.slide }));
       nextLabel.textContent = n.slide === pos.slide ? "Als Nächstes: nächster Schritt" : "Als Nächstes";
     } else {
       unfitNext = null;

@@ -12,6 +12,7 @@
         (scm crypto)
         (scm png)
         (scm zip)
+        (scm image)
         (scm test))
 
 (define root
@@ -187,6 +188,31 @@
           (test-assert "the text" (has? s1 "Fusszeile"))
           (test-assert "the fixed date" (has? s1 "1. Mai"))
           (test-assert "the number, hidden slides not counted" (has? s2 "<a:t>2</a:t>")))))
+    (delete-file file)))
+
+(test-group "photos upright and downscaled"
+  ;; a 400 x 200 JPEG stored sideways (EXIF orientation 6) in a 100 x 100 box
+  (let* ((jpeg (image->jpeg (make-image 400 200 (make-bytevector (* 400 200 4) 200)) 90))
+         (exif (bytevector #xFF #xE1 0 34 69 120 105 102 0 0 77 77 0 42 0 0 0 8
+                           0 1 1 18 0 3 0 0 0 1 0 6 0 0 0 0 0 0))
+         (sha (store! (bytevector-append (bytevector-copy jpeg 0 2) exif (bytevector-copy jpeg 2))))
+         (doc `(("format" . 1)
+                ("slides" . #((("id" . "p") ("layout" . "blank")
+                               ("elements" . #((("id" . "i") ("type" . "image") ("asset" . ,sha)
+                                                ("x" . 0) ("y" . 0) ("w" . 100) ("h" . 100)))))))))
+         (file (string-append data-dir "/photo.pptx")))
+    (test-assert "the PDF" (has? (text-of (deck->pdf doc "folien" "x" data-dir '())) "/Subtype /Image"))
+    (let ((p (open-binary-output-file file))) (write-bytevector (deck->pptx doc "folien" "x" data-dir) p) (close-port p))
+    (call-with-input-zip file
+      (lambda (z)
+        (let* ((media (let loop ((ns (zip-entry-names z)))
+                        (cond ((null? ns) #f)
+                              ((string-contains-from (car ns) "ppt/media/" 0) (car ns))
+                              (else (loop (cdr ns))))))
+               (info (image-info (zip-read-entry-bytevector z media))))
+          (test-equal "PowerPoint gets it upright, at 2 px per unit"
+            '(100 200 1)
+            (map (lambda (k) (cdr (assq k info))) '(width height orientation))))))
     (delete-file file)))
 
 (test-end "folien export pdf")

@@ -13,7 +13,8 @@
 ;; slide per page without notes gives 960 x 540 pt pages (PowerPoint's
 ;; 16:9); the others are A4 portrait handouts. Builds show their final
 ;; state, or one page per step. Hidden slides are left out. Videos show
-;; their poster frame.
+;; their poster frame. Photos are embedded upright (EXIF orientation) and
+;; downscaled to what the slide shows ((app images)).
 
 (define-library (app export-pdf)
   (import (scheme base)
@@ -31,7 +32,9 @@
           (only (scm raster) canvas-width canvas->png)
           (app designs)
           (app model)
-          (app assets))
+          (app assets)
+          (app images)
+          (only (scm image) image-decode image->png))
   (export deck->pdf)
   (begin
 
@@ -342,11 +345,13 @@
         (close-port p)
         (if (eof-object? bv) (bytevector) bv)))
 
-    ;; The embedded image of an asset (each once per document), or #f
-    ;; when it cannot be drawn (missing, a format the PDF cannot take).
-    ;; svg-size: the pixel size to rasterize an SVG at.
-    (define (asset-image ctx sha svg-size)
-      (let ((cached (hash-table-ref/default (ctx-images ctx) sha #f)))
+    ;; The embedded image of an asset in a box of w x h slide units (each
+    ;; once per document and box), or #f when it cannot be drawn
+    ;; (missing, a format the PDF cannot take). SVGs are rasterized at
+    ;; twice the box size.
+    (define (asset-image ctx sha w h cover?)
+      (let* ((key (list sha w h cover?))
+             (cached (hash-table-ref/default (ctx-images ctx) key #f)))
         (cond
           ((eq? cached 'none) #f)
           (cached cached)
@@ -357,13 +362,29 @@
                               (let* ((bv (read-bytes path))
                                      (mime (sniff-mime (bytevector-copy bv 0 (min 1024 (bytevector-length bv))))))
                                 (cond
-                                  ((equal? mime "image/jpeg") (pdf-embed-jpeg (ctx-pdf ctx) bv))
-                                  ((equal? mime "image/png") (pdf-embed-png (ctx-pdf ctx) bv))
+                                  ((raster-mime? mime)
+                                   (let ((out (export-image bv mime w h cover?)))
+                                     (if (eq? (car out) bv)
+                                         ;; the original: embedded once, whatever the box
+                                         (let ((k (list 'original sha)))
+                                           (or (hash-table-ref/default (ctx-images ctx) k #f)
+                                               (let ((img (embed-raster ctx bv mime)))
+                                                 (hash-table-set! (ctx-images ctx) k img)
+                                                 img)))
+                                         (embed-raster ctx (car out) (cdr out)))))
                                   ((equal? mime "image/svg+xml")
-                                   (pdf-embed-png (ctx-pdf ctx) (svg-png (utf8->string bv) svg-size)))
+                                   (pdf-embed-png (ctx-pdf ctx) (svg-png (utf8->string bv) (* 2 (max w h)))))
                                   (else #f)))))))
-             (hash-table-set! (ctx-images ctx) sha (or img 'none))
+             (hash-table-set! (ctx-images ctx) key (or img 'none))
              img)))))
+
+    (define (embed-raster ctx bytes mime)
+      (if (equal? mime "image/jpeg")
+          (pdf-embed-jpeg (ctx-pdf ctx) bytes)
+          ;; (scm pdf) takes 8-bit RGB(A) PNGs; others (paletted, 16-bit)
+          ;; are redrawn
+          (guard (e (#t (pdf-embed-png (ctx-pdf ctx) (image->png (image-decode bytes)))))
+            (pdf-embed-png (ctx-pdf ctx) bytes))))
 
     ;; An SVG as PNG about svg-size pixels across (the element's size at
     ;; print resolution), whatever the SVG's own size.
@@ -376,11 +397,11 @@
 
     (define (draw-image ctx page el w h)
       (let* ((sha (or (and (equal? (jr el "type") "video") (jr el "poster")) (jr el "asset")))
-             (img (and sha (asset-image ctx sha (* 2 (max w h))))))
+             (cover? (equal? (jr el "fit") "cover"))
+             (img (and sha (asset-image ctx sha w h cover?))))
         (when img
           (let* ((iw (pdf-image-width img))
                  (ih (pdf-image-height img))
-                 (cover? (equal? (jr el "fit") "cover"))
                  (s (if cover? (max (/ w iw) (/ h ih)) (min (/ w iw) (/ h ih))))
                  (dw (* s iw)) (dh (* s ih)))
             (pdf-with-state page

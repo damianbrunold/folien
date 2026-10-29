@@ -103,6 +103,26 @@ Description: Runs the clean-up and returns what it did: an alist of
              (map (lambda (d) (string-append data-dir "/assets/" d))
                   (directory-directories (string-append data-dir "/assets")))
              '()))
+        ;; thumbnail copies ((app images)) of assets that are gone
+        (for-each
+         (lambda (dir)
+           (for-each
+            (lambda (path)
+              (let* ((name (let loop ((i (- (string-length path) 1)))
+                             (if (char=? (string-ref path i) #\/)
+                                 (substring path (+ i 1) (string-length path))
+                                 (loop (- i 1)))))
+                     (sha (and (>= (string-length name) 64) (substring name 0 64)))
+                     (orphan? (or (string-contains? name ".tmp-")
+                                  (not (valid-sha? sha))
+                                  (not (db-scalar db "SELECT 1 FROM assets WHERE sha256 = $1" sha)))))
+                (when (and orphan? (older-than? path now-ms day-ms) (delete-quietly! path))
+                  (set! files (+ files 1)))))
+            (files-in dir)))
+         (if (directory-exists? (string-append data-dir "/variants"))
+             (map (lambda (d) (string-append data-dir "/variants/" d))
+                  (directory-directories (string-append data-dir "/variants")))
+             '()))
         ;; leftovers of uploads and imports, cached bundles
         (for-each
          (lambda (path)

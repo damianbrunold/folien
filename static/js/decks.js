@@ -20,7 +20,7 @@ async function drawThumbs() {
     try {
       const slide = JSON.parse(frame.dataset.slide);
       const base = frame.dataset.assetBase;
-      fitInto(frame, renderSlide(slide, design, { assetUrl: (sha) => base + sha }));
+      fitInto(frame, renderSlide(slide, design, { assetUrl: (sha) => base + sha + "?w=640" }));
     } catch (e) {
       // A slide that does not draw leaves the frame empty.
     }

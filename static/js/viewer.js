@@ -51,6 +51,8 @@ async function main() {
   let unfit = null;
   const byId = new Map(slides.map((s, i) => [s.id, i]));
   const assetUrl = (sha) => root.dataset.deckUrl + "/assets/" + sha;
+  // Thumbnails get downscaled copies of images (videos ignore ?w).
+  const thumbUrl = (sha) => assetUrl(sha) + "?w=640";
   const ctx = { assetUrl, videoControls: true, onLink: (id) => byId.has(id) && show(byId.get(id)) };
 
   const thumbButtons = slides.map((slide, i) => {
@@ -62,7 +64,7 @@ async function main() {
     b.append(el("span", "num", String(i + 1)), f);
     b.addEventListener("click", () => show(i));
     thumbs.appendChild(b);
-    fitInto(f, renderSlide(slide, design, { assetUrl, doc: deck.doc, index: i }));
+    fitInto(f, renderSlide(slide, design, { assetUrl: thumbUrl, doc: deck.doc, index: i }));
     return b;
   });
 

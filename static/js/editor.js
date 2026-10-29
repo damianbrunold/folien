@@ -58,6 +58,8 @@ const findEl = (id) => slide().elements.find((e) => e.id === id);
 const resolved = (el) => resolveElement(layout(), el);
 const selectedEls = () => sel.map(findEl).filter(Boolean);
 const assetUrl = (sha) => urls.deckUrl + "/assets/" + sha;
+// Thumbnails get downscaled copies of images (videos ignore ?w).
+const thumbUrl = (sha, w = 640) => assetUrl(sha) + "?w=" + w;
 
 // --- DOM helpers ----------------------------------------------------
 
@@ -1235,7 +1237,7 @@ const unfits = new WeakMap();
 function drawThumb(frame, s) {
   const prev = unfits.get(frame);
   if (prev) prev();
-  unfits.set(frame, fitInto(frame, renderSlide(s, design, { assetUrl, doc, index: doc.slides.indexOf(s) })));
+  unfits.set(frame, fitInto(frame, renderSlide(s, design, { assetUrl: thumbUrl, doc, index: doc.slides.indexOf(s) })));
 }
 
 const thumbTimers = new Map();
@@ -1607,7 +1609,7 @@ function librarySection() {
           },
           a.mime.startsWith("video/")
             ? h("span", { class: "media-video", text: "▶" })
-            : h("img", { src: assetUrl(a.sha), alt: "", loading: "lazy" }),
+            : h("img", { src: thumbUrl(a.sha, 320), alt: "", loading: "lazy" }),
         ),
       ),
     );

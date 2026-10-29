@@ -26,7 +26,8 @@
           (scm svg raster)
           (app designs)
           (app model)
-          (app assets))
+          (app assets)
+          (app images))
   (export deck->pptx)
   (begin
 
@@ -178,14 +179,24 @@
         (close-port p)
         (and (bytevector? bv) (sniff-mime bv))))
 
-    ;; A picture source for an asset: (source mime width height key), or
-    ;; #f. SVGs are rasterized (at twice their element size).
-    (define (picture-source data-dir sha px-size)
+    ;; A picture source for an asset in a box of w x h slide units:
+    ;; (source mime width height key), or #f. PNGs and JPEGs upright and
+    ;; downscaled to what the slide shows ((app images)); SVGs rasterized
+    ;; at twice their element size.
+    (define (picture-source data-dir sha w h cover?)
       (let ((path (and (valid-sha? sha) (asset-file data-dir sha))))
         (and path (file-exists? path)
              (let ((mime (head-mime path)))
                (cond
-                 ((member mime '("image/png" "image/jpeg" "image/gif"))
+                 ((raster-mime? mime)
+                  (let* ((bv (read-bytes path))
+                         (out (export-image bv mime w h cover?))
+                         (same? (eq? (car out) bv))
+                         (size (image-size (car out) (cdr out))))
+                    (and size
+                         (list (if same? path (car out)) (cdr out) (car size) (cdr size)
+                               (if same? sha (string-append sha "-" (number->string (car size))))))))
+                 ((equal? mime "image/gif")
                   (let ((size (image-size (read-head path) mime)))
                     (and size (list path mime (car size) (cdr size) sha))))
                  ((equal? mime "image/svg+xml")
@@ -291,7 +302,8 @@
            (let* ((video? (equal? type "video"))
                   (video-path (and video? (valid-sha? (jr el "asset")) (asset-file data-dir (jr el "asset"))))
                   (mp4? (and video-path (file-exists? video-path) (equal? (head-mime video-path) "video/mp4")))
-                  (pic (picture-source data-dir (if video? (jr el "poster") (jr el "asset")) (* 2 (max w h)))))
+                  (pic (picture-source data-dir (if video? (jr el "poster") (jr el "asset")) w h
+                                       (equal? (jr el "fit") "cover"))))
              (when pic
                (let* ((f (fit x y w h (list-ref pic 2) (list-ref pic 3) (equal? (jr el "fit") "cover")))
                       (opts `(,@common

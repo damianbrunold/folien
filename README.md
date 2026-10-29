@@ -38,6 +38,10 @@ Implemented step by step, phase by phase:
       fixed text) per deck, placed by the design; not on title slides
       unless wanted, switchable per slide; in the PDF, and in PowerPoint
       as real slide-number and date fields
+- [x] Images on the server (dabscm 2.7 `(scm image)`): uploads and imports
+      must decode and are measured by the server; thumbnails load
+      downscaled copies (`?w=320|640|1280`, cached); PDF and PowerPoint
+      embed photos upright (EXIF) and no larger than the slide shows
 
 ## Layout
 
@@ -57,6 +61,7 @@ src/app-designs.sld   the designs: colour and font tokens, layouts
 src/app-model.sld     the deck document: creation and validation
 src/app-decks.sld     deck queries (owner-scoped, revision-checked saves)
 src/app-assets.sld    uploaded images and videos (content-addressed files)
+src/app-images.sld    image checks, thumbnail copies, export copies ((scm image))
 src/app-export-pdf.sld  the deck as PDF, natively with (scm pdf)
 src/app-export-pptx.sld the deck as PowerPoint file, with (scm ooxml presentation)
 src/app-bundle.sld    the deck as zip bundle and back; app-jsbundle.sld builds

@@ -17,6 +17,7 @@
         (scm test)
         (scm crypto)
         (scm crypto password)
+        (only (scm image) make-image image->png)
         (scm net http request)
         (scm net http response)
         (scm json simple)
@@ -35,6 +36,9 @@
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien web (live database)")
+
+;; A real 3 x 2 PNG (uploads must decode), different for each k.
+(define (real-png k) (image->png (make-image 3 2 (make-bytevector 24 k))))
 
 (define config-path (get-environment-variable "FOLIEN_TEST_CONFIG"))
 
@@ -250,9 +254,7 @@
           (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("title" . "") ("doc" . ,doc)))))
 
           ;; Assets: upload, list, fetch (with ranges), use in the document.
-          (let* ((png (bytevector-append
-                       (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A)
-                       (make-bytevector 100 1)))
+          (let* ((png (real-png 1))
                  (up (send-bytes "POST" (string-append api "/assets?name=a%2Fb.png&w=10&h=20") carol png))
                  (asset (json-body up))
                  (sha (jref asset "sha"))
@@ -260,8 +262,9 @@
             (test-equal 201 (status up))
             (test-equal "image/png" (jref asset "mime"))
             (test-equal "b.png" (jref asset "name"))
-            (test-equal 108 (jref asset "size"))
-            (test-equal 10 (jref asset "width"))
+            (test-equal (bytevector-length png) (jref asset "size"))
+            (test-equal "measured, not the client's" 3 (jref asset "width"))
+            (test-equal 2 (jref asset "height"))
             (test-equal 64 (string-length sha))
             ;; the same file again: one asset
             (send-bytes "POST" (string-append api "/assets?name=again.png") carol png)
@@ -285,6 +288,19 @@
             (test-equal 415 (status (send-bytes "POST" (string-append api "/assets") carol
                                                 (string->utf8 "#!/bin/sh"))))
             (test-equal 400 (status (send-bytes "POST" (string-append api "/assets") carol (bytevector))))
+            ;; Images must decode.
+            (test-equal 422 (status (send-bytes "POST" (string-append api "/assets") carol
+                                                (bytevector-copy (real-png 9) 0 40))))
+            ;; A thumbnail copy: smaller, upright, cached; other widths get the file.
+            (let* ((big (image->png (make-image 900 600 (make-bytevector (* 900 600 4) 77))))
+                   (big-sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=big.png") carol big)) "sha"))
+                   (thumb (send "GET" (string-append api "/assets/" big-sha "?w=320") carol)))
+              (test-equal 200 (status thumb))
+              (test-equal "image/png" (http-response-header thumb "Content-Type"))
+              (let ((b (http-response-body thumb)))
+                (test-equal "320 wide" 320 (+ (* 256 (bytevector-u8-ref b 18)) (bytevector-u8-ref b 19))))
+              (test-equal "an unknown width: the file" big
+                (http-response-body (send "GET" (string-append api "/assets/" big-sha "?w=333") carol))))
             ;; An SVG is recognised as such.
             (test-equal "image/svg+xml"
               (jref (json-body (send-bytes "POST" (string-append api "/assets?name=x.svg") carol
@@ -397,7 +413,7 @@
           (send "POST" (string-append "/decks/" id "/duplicate") carol)
           ;; the copy has the assets too
           (let ((copy-id (col (car (filter-decks db "Neu (Kopie)")) "id")))
-            (test-equal 2 (vector-length (json-body (send "GET" (string-append "/api/decks/" copy-id "/assets") carol)))))
+            (test-equal 3 (vector-length (json-body (send "GET" (string-append "/api/decks/" copy-id "/assets") carol)))))
           (test-assert (has? (body (send "GET" "/" carol)) "Neu (Kopie)"))
           (send "POST" (string-append "/decks/" id "/rename") carol "title=Bericht+2026")
           (test-assert (has? (body (send "GET" "/" carol)) "Bericht 2026"))
@@ -415,8 +431,7 @@
       (let* ((erin (sign-in "erin" "erinpassword"))
              (id (deck-id-of (send "POST" "/decks" erin "title=B%C3%BCndel&design=zh")))
              (api (string-append "/api/decks/" id))
-             (png (bytevector-append (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A)
-                                     (make-bytevector 50 7)))
+             (png (real-png 7))
              (sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=b.png") erin png)) "sha"))
              (deck (json-body (send "GET" api erin)))
              (slide (vector-ref (doc-slides (jref deck "doc")) 0))
@@ -519,7 +534,7 @@
              (id (deck-id-of (send "POST" "/decks" frank "title=Geteilt&design=folien")))
              (api (string-append "/api/decks/" id))
              (page (string-append "/decks/" id))
-             (png (bytevector-append (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A) (make-bytevector 20 3)))
+             (png (real-png 3))
              (sha (jref (json-body (send-bytes "POST" (string-append api "/assets") frank png)) "sha"))
              (gina-id (user-id "gina"))
              (doc (jref (json-body (send "GET" api frank)) "doc"))
@@ -656,8 +671,7 @@
              (old (mk "Alt"))
              (keep (mk "Bleibt"))
              (young (mk "Frisch"))
-             (png (lambda (k) (bytevector-append (bytevector #x89 #x50 #x4E #x47 #x0D #x0A #x1A #x0A)
-                                                 (make-bytevector 30 k))))
+             (png real-png)
              (upload (lambda (deck bytes)
                        (jref (json-body (send-bytes "POST" (string-append "/api/decks/" deck "/assets") ida bytes))
                              "sha")))
@@ -667,6 +681,9 @@
              (orphan (string-append data-dir "/assets/ab/" (make-string 64 #\e)))
              (tmp-file (string-append data-dir "/tmp/import-leftover")))
         (upload keep (png 42))
+        ;; thumbnail copies of both
+        (send "GET" (string-append "/api/decks/" old "/assets/" only-old "?w=320") ida)
+        (send "GET" (string-append "/api/decks/" old "/assets/" shared "?w=320") ida)
         (send "POST" (string-append "/decks/" old "/trash") ida)
         (send "POST" (string-append "/decks/" young "/trash") ida)
         ;; old has been in the trash for 40 days
@@ -693,7 +710,10 @@
         (test-assert (file-exists? (asset-file data-dir shared)))
         (test-equal 200 (status (send "GET" (string-append "/api/decks/" keep "/assets/" shared) ida)))
         (test-assert (not (file-exists? orphan)))
-        (test-assert (not (file-exists? tmp-file)))))
+        (test-assert (not (file-exists? tmp-file)))
+        (let ((variant (lambda (sha) (string-append data-dir "/variants/" (substring sha 0 2) "/" sha "-320.png"))))
+          (test-assert "the gone asset's thumbnail goes" (not (file-exists? (variant only-old))))
+          (test-assert "the kept one's stays" (file-exists? (variant shared))))))
 
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))

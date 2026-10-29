@@ -151,6 +151,7 @@ export function upload(deckUrl, blob, name, size, onProgress) {
       if (xhr.status === 201) resolve(xhr.response);
       else if (xhr.status === 413) reject(new Error("Die Datei ist zu gross."));
       else if (xhr.status === 415) reject(new Error("Dieser Dateityp wird nicht unterstützt."));
+      else if (xhr.status === 422) reject(new Error("Das Bild ist beschädigt und kann nicht gelesen werden."));
       else if (xhr.status === 403) reject(new Error("Die Präsentation ist schreibgeschützt."));
       else reject(new Error("Hochladen fehlgeschlagen (" + xhr.status + ")."));
     };

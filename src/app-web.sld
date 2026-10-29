@@ -38,6 +38,7 @@
           (app model)
           (app decks)
           (app assets)
+          (app images)
           (app remote)
           (app export-pdf)
           (app export-pptx)
@@ -615,9 +616,11 @@ Description: Builds the app's request handler. settings is an alist:
 
 ;; --- assets ---
 
-        ;; Body: the file. Query: name, and the client's w and h (pixels).
-        ;; 201 with the asset; 400 empty, 403 read-only deck, 404, 413 too
-        ;; large (from the server), 415 a type that is not accepted.
+        ;; Body: the file. Query: name, and the client's w and h (pixels;
+        ;; PNGs and JPEGs are measured instead). 201 with the asset; 400
+        ;; empty, 403 read-only deck, 404, 413 too large (bytes, or above
+        ;; 50 megapixels), 415 a type that is not accepted, 422 an image
+        ;; that does not decode.
         (route! "POST" "/api/decks/:id/assets"
           (api-signed-in
             (lambda (req params user)
@@ -636,6 +639,8 @@ Description: Builds the app's request handler. settings is an alist:
                        ((eq? r 'empty) (json-error 400 "empty upload"))
                        ((eq? r 'unsupported)
                         (json-error 415 "unsupported file type (PNG, JPEG, GIF, WebP, SVG, MP4, WebM)"))
+                       ((eq? r 'invalid) (json-error 422 "the image cannot be decoded"))
+                       ((eq? r 'too-large) (json-error 413 "the image has too many pixels"))
                        (else (json-status 201 (asset->json r)))))))))))
 
         (route! "GET" "/api/decks/:id/assets"
@@ -646,15 +651,21 @@ Description: Builds the app's request handler. settings is an alist:
                     (json-status 200 (list->vector (map asset->json (list-deck-assets db id))))
                     (json-error 404 "no such deck"))))))
 
-        ;; The file, with byte ranges (videos seek).
+        ;; The file, with byte ranges (videos seek). ?w=320|640|1280 asks a
+        ;; PNG or JPEG for an upright copy at most that large (thumbnails);
+        ;; other types and widths get the file itself.
         (route! "GET" "/api/decks/:id/assets/:sha"
           (signed-in
             (lambda (req params user)
               (let* ((sha (params-ref params "sha"))
-                     (row (deck-asset db (col user "id") (params-ref params "id") sha)))
+                     (row (deck-asset db (col user "id") (params-ref params "id") sha))
+                     (w (let ((p (assoc "w" (url-query-params (http-request-url req)))))
+                          (and p (string->number (cdr p)))))
+                     (variant (and row w (memv w variant-widths) (raster-mime? (col row "mime"))
+                                   (image-variant data-dir sha (asset-file data-dir sha) (col row "mime") w))))
                 (if (not row)
                     (http-not-found)
-                    (let ((r (file-response (asset-file data-dir sha)
+                    (let ((r (file-response (if variant (car variant) (asset-file data-dir sha))
                                             `((request . ,req)
                                               (content-type . ,(col row "mime"))
                                               (cache-control . "private, max-age=31536000, immutable")))))
