@@ -112,7 +112,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.7.1 or later.
+Needs dabscm 2.11.0 or later.
 
 ## PDF export
 
@@ -186,7 +186,8 @@ without signing in. The code holds a remote link, a token
 (`1.<user>.<deck>.<epoch>.<expiry>.<HMAC>`, src/app-auth.sld) signed
 with a key derived from `session-secret` over the user's password stamp.
 The remote page moves it into the `folien_remote` cookie (HttpOnly,
-SameSite=Strict) and drops it from the address. It counts as its maker
+SameSite=Lax, as the phone opens the link from outside the browser) and
+drops it from the address. It counts as its maker
 only for that deck's remote, its JSON, the designs and the event
 stream/socket; it ends after 12 hours, when the password changes, when
 its maker loses access to the deck, or with "Neuen Code erzeugen"

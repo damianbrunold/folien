@@ -480,9 +480,13 @@ Description: Builds the app's request handler. settings is an alist:
             (let ((user (remote-user req (params-ref params "id"))))
               (if user (handler req params user) (json-error 401 "not signed in")))))
 
+        ;; SameSite=Lax, unlike the session cookie: the phone opens the
+        ;; link from its camera app, a cross-site navigation, and a Strict
+        ;; cookie would not come along on the redirect that follows.
         (define (remote-cookie-header token)
           (cons "Set-Cookie"
                 (apply format-set-cookie remote-cookie token remote-link-seconds (cookie-path site)
+                       'lax
                        (if (setting settings 'secure-cookies?) '() '(no-secure)))))
 
         ;; The same for the JSON API: 401 instead of a redirect.

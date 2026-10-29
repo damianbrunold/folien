@@ -274,9 +274,10 @@
                  (as-phone (lambda (method url . form) (apply send method url phone form))))
             (test-equal "the token goes into a cookie, out of the address" remote (location r))
             (test-assert (has? phone "folien_remote="))
-            (test-assert "HttpOnly, SameSite=Strict"
+            ;; Lax: a QR code opens the link from outside the browser
+            (test-assert "HttpOnly, SameSite=Lax"
               (and (has? (http-response-header r "Set-Cookie") "HttpOnly")
-                   (has? (http-response-header r "Set-Cookie") "SameSite=Strict")))
+                   (has? (http-response-header r "Set-Cookie") "SameSite=Lax")))
             (test-equal 200 (status (as-phone "GET" remote)))
             (test-equal 200 (status (as-phone "GET" api)))
             (test-equal 200 (status (as-phone "GET" "/api/designs")))
