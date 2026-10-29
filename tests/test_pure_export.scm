@@ -123,9 +123,10 @@
     (test-assert "Inter Black embedded" (has? s "+Inter-Black"))
     (test-assert "the link" (has? s "https://www.zh.ch/"))
     (test-assert "transparency" (has? s "/ExtGState"))
-    ;; RGB PNG (also the poster, embedded once), RGBA PNG and the SVG
-    ;; rendered as RGBA PNG (each with its mask); the GIF is left out
-    (test-equal 5 (count-of s "/Subtype /Image"))
+    ;; RGB PNG (also the poster, embedded once), RGBA PNG with its mask,
+    ;; and the SVG rendered as PNG (opaque, so without a mask: dabscm
+    ;; 2.12); the GIF is left out
+    (test-equal 4 (count-of s "/Subtype /Image"))
     (test-assert (has? s "/SMask"))
     (test-assert "the title (UTF-16, it has an umlaut)" (has? s "/Title <FEFF"))))
 

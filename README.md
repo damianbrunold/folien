@@ -116,7 +116,7 @@ most 3840 px (what the PDF export embeds) and takes a poster frame of
 each video. Behind nginx, `client_max_body_size` must allow the uploads
 (`deploy/nginx.conf.example`).
 
-Needs dabscm 2.11.0 or later.
+Needs dabscm 2.12.0 or later (2.11.0 works, but embeds screenshots in PDFs slowly).
 
 ## PDF export
 
