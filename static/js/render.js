@@ -359,6 +359,56 @@ function renderElement(r, design, ctx) {
   }
 }
 
+// --- footer -----------------------------------------------------------
+
+// The number shown on the slide at index: its position among the slides
+// that are not hidden; a hidden slide shows the number the next one will.
+// As (slide-number) in src/app-model.sld.
+export function slideNumber(doc, index) {
+  let n = 1;
+  for (let i = 0; i < index; i++) if (!doc.slides[i].hidden) n++;
+  return n;
+}
+
+// Today as the footer shows it: "01.11.2026".
+export function todayText(d = new Date()) {
+  const two = (n) => String(n).padStart(2, "0");
+  return two(d.getDate()) + "." + two(d.getMonth() + 1) + "." + d.getFullYear();
+}
+
+// The footer fields of the slide at index as text elements placed by the
+// design, each with field "date", "text" or "number". As
+// (footer-elements) in src/app-model.sld.
+export function footerElements(doc, design, index, today = todayText()) {
+  const footer = doc.footer;
+  const slide = doc.slides[index];
+  const boxes = design.footer;
+  if (!footer || !boxes || !slide || slide.footer === false) return [];
+  if (slide.layout === "title" && !footer.titleSlides) return [];
+  const layout = findLayout(design, slide.layout);
+  const color = layout && layout.footerColor;
+  const date = footer.date === "auto" ? today : footer.date === "fixed" ? footer.dateText || "" : "";
+  const out = [];
+  const field = (key, str) => {
+    const b = boxes[key];
+    if (!b || !str) return;
+    out.push({
+      type: "text",
+      field: key,
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      h: b.h,
+      style: color ? Object.assign({}, b.style, { color }) : b.style,
+      text: { paragraphs: [{ runs: [{ text: str }] }] },
+    });
+  };
+  field("date", date);
+  field("text", footer.text || "");
+  field("number", footer.number ? String(slideNumber(doc, index)) : "");
+  return out;
+}
+
 // --- slides -----------------------------------------------------------
 
 // The highest build step of a slide (0 if nothing builds).
@@ -375,6 +425,8 @@ export function buildSteps(slide) {
 //   assetUrl(id)  the URL of an uploaded asset
 //   onLink(id)    a "#slide-<id>" link was clicked
 //   videoControls show the controls of videos
+//   doc, index    the deck and the slide's index in it, for the footer
+//                 fields (slide number, date, text); none without them
 export function renderSlide(slide, design, ctx = {}) {
   const root = div("slide");
   root.style.width = SLIDE_W + "px";
@@ -388,6 +440,14 @@ export function renderSlide(slide, design, ctx = {}) {
         node.classList.add("deco");
         root.appendChild(node);
       }
+    }
+  }
+  if (ctx.doc && ctx.index !== undefined) {
+    for (const f of footerElements(ctx.doc, design, ctx.index)) {
+      const node = renderText(resolveElement(null, f), design, ctx);
+      node.classList.add("deco", "footer-field");
+      node.dataset.field = f.field;
+      root.appendChild(node);
     }
   }
   const step = ctx.step === undefined ? Infinity : ctx.step;

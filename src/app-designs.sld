@@ -11,6 +11,11 @@
 ;; A placeholder element in a deck names its role ("title", "body", ...)
 ;; and inherits geometry and text style from the slide's layout unless it
 ;; overrides them.
+;;
+;; "footer" places the deck's footer fields (see "footer" in (app model)):
+;; a box and text style each for the date, the footer text and the slide
+;; number, on every layout. A layout's "footerColor" recolours them where
+;; its background calls for it.
 
 (define-library (app designs)
   (import (scheme base))
@@ -46,6 +51,18 @@
         ("name" . ,name)
         ("decorations" . ,(list->vector decorations))
         ("placeholders" . ,(list->vector placeholders))))
+
+    (define (with-footer-color color layout)
+      (append layout `(("footerColor" . ,color))))
+
+    ;; The footer fields along the bottom edge: date left, text centred,
+    ;; number right, from x0 to the right margin.
+    (define (footer-boxes x0 y size)
+      (let ((style (lambda (align) (text-style "body" size "muted" align "middle")))
+            (w (- 1920 x0 x0)))
+        `(("date"   . (,@(box x0 y 400 50) ("style" . ,(style "left"))))
+          ("text"   . (,@(box (+ x0 440) y (- w 880) 50) ("style" . ,(style "center"))))
+          ("number" . (,@(box (- 1920 x0 400) y 400 50) ("style" . ,(style "right")))))))
 
     ;; --- design "folien": our own -------------------------------------
     ;; Light, calm, one blue accent; a thin accent bar under the title.
@@ -88,12 +105,13 @@
            (box 120 300 800 680) (text-style "body" 40 "text" "left" "top"))
          (placeholder "right" "Rechte Spalte"
            (box 1000 300 800 680) (text-style "body" 40 "text" "left" "top")))
-       (layout "section" "Kapitel"
+       (with-footer-color "on-accent"
+        (layout "section" "Kapitel"
          (list (rect (box 0 0 1920 1080) "accent"))
          (placeholder "title" "Kapiteltitel"
            (box 160 380 1600 220) (text-style "heading" 104 "on-accent" "left" "bottom"))
          (placeholder "subtitle" "Untertitel"
-           (box 160 620 1600 160) (text-style "body" 44 "on-accent" "left" "top")))
+           (box 160 620 1600 160) (text-style "body" 44 "on-accent" "left" "top"))))
        (layout "image-caption" "Bild mit Legende"
          (list (folien-title-bar))
          (placeholder "title" "Titel"
@@ -160,12 +178,13 @@
            (box 120 290 800 690) (text-style "body" 40 "text" "left" "top"))
          (placeholder "right" "Rechte Spalte"
            (box 1000 290 800 690) (text-style "body" 40 "text" "left" "top")))
-       (layout "section" "Kapitel"
+       (with-footer-color "on-accent"
+        (layout "section" "Kapitel"
          (list (rect (box 0 0 1920 1080) "accent"))
          (placeholder "title" "Kapiteltitel"
            (box 120 380 1680 220) (text-style "heading" 104 "on-accent" "left" "bottom"))
          (placeholder "subtitle" "Untertitel"
-           (box 120 620 1680 160) (text-style "body" 44 "on-accent" "left" "top")))
+           (box 120 620 1680 160) (text-style "body" 44 "on-accent" "left" "top"))))
        (layout "image-caption" "Bild mit Legende"
          (list (zh-band))
          (placeholder "title" "Titel"
@@ -194,20 +213,21 @@
     (define (text-settings bullet)
       `(("bullet" . ,bullet) ("lineHeight" . 1.2) ("paraSpacing" . 0.35)))
 
-    (define (make-design id name colors fonts text layouts)
+    (define (make-design id name colors fonts text footer layouts)
       `(("id" . ,id)
         ("name" . ,name)
         ("size" . #(1920 1080))
         ("colors" . ,colors)
         ("fonts" . ,fonts)
         ("text" . ,text)
+        ("footer" . ,footer)
         ("layouts" . ,layouts)))
 
     (define designs
       (list (make-design "folien" "Folien" folien-colors folien-fonts
-                         (text-settings "•") folien-layouts)
+                         (text-settings "•") (footer-boxes 120 1006 26) folien-layouts)
             (make-design "zh" "Kanton Zürich" zh-colors zh-fonts
-                         (text-settings "–") zh-layouts)))
+                         (text-settings "–") (footer-boxes 120 1006 26) zh-layouts)))
 
     (define (design-ref design key)
       (cdr (assoc key design)))

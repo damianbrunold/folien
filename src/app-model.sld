@@ -5,8 +5,15 @@
 ;; title, design and revision:
 ;;
 ;;   {"format": 1,
+;;    "footer"?: {"text"?, "number"?, "date"?: auto|fixed, "dateText"?,
+;;                "titleSlides"?},
 ;;    "slides": [{"id", "layout", "hidden"?, "transition"?, "notes"?,
-;;                "elements": [element ...]} ...]}
+;;                "footer"?: false, "elements": [element ...]} ...]}
+;;
+;;   footer: the fields every slide shows where the design puts them (see
+;;   footer-elements): a text, the slide number, the date (today's, or
+;;   dateText). Not on title slides unless titleSlides; a slide with
+;;   "footer": false shows none.
 ;;
 ;;   element: {"id", "type": text|image|video|shape|line|table,
 ;;             "placeholder"?: role,          ; inherits from the layout
@@ -35,6 +42,8 @@
           new-slide
           validate-doc
           doc-slides
+          slide-number
+          footer-elements
           jref)
   (begin
 
@@ -59,6 +68,60 @@ Description: A fresh random id for a slide or element (12 characters)."
               (else #f))))
 
     (define (doc-slides doc) (jref doc "slides" #()))
+
+    ;; --- footer ---------------------------------------------------------
+
+    (define (slide-number doc index)
+      "Syntax: (slide-number doc index)
+Library: (app model)
+Description: The number shown on the slide at index: its position among
+  the slides that are not hidden (exports and presentations leave hidden
+  slides out); a hidden slide shows the number the next one will."
+      (let ((slides (doc-slides doc)))
+        (let loop ((i 0) (n 1))
+          (if (>= i index)
+              n
+              (loop (+ i 1) (if (eq? (jref (vector-ref slides i) "hidden") #t) n (+ n 1)))))))
+
+    (define (footer-elements doc design index today)
+      "Syntax: (footer-elements doc design index today)
+Library: (app model)
+Description: The footer fields of the slide at index as text elements
+  (without ids) placed by the design, each with \"field\": \"date\",
+  \"text\" or \"number\"; today is the date to show for an automatic
+  date (\"29.10.2026\"). As footerElements in static/js/render.js."
+      (let* ((footer (jref doc "footer"))
+             (slide (vector-ref (doc-slides doc) index))
+             (layout (find-layout design (jref slide "layout")))
+             (boxes (jref design "footer")))
+        (if (or (not footer) (not boxes)
+                (eq? (jref slide "footer" #t) #f)
+                (and (equal? (jref slide "layout") "title") (not (eq? (jref footer "titleSlides") #t))))
+            '()
+            (let* ((color (and layout (jref layout "footerColor")))
+                   (date (let ((d (jref footer "date")))
+                           (cond ((equal? d "auto") today)
+                                 ((equal? d "fixed") (jref footer "dateText" ""))
+                                 (else ""))))
+                   (field (lambda (key str)
+                            (let ((b (jref boxes key)))
+                              (if (or (not b) (equal? str ""))
+                                  '()
+                                  (list
+                                   `(("type" . "text") ("field" . ,key)
+                                     ("x" . ,(jref b "x")) ("y" . ,(jref b "y"))
+                                     ("w" . ,(jref b "w")) ("h" . ,(jref b "h"))
+                                     ("style" . ,(if color
+                                                     (map (lambda (p)
+                                                            (if (equal? (car p) "color") (cons "color" color) p))
+                                                          (jref b "style"))
+                                                     (jref b "style")))
+                                     ("text" . ,(rich-text str)))))))))
+              (append (field "date" date)
+                      (field "text" (jref footer "text" ""))
+                      (field "number" (if (eq? (jref footer "number") #t)
+                                          (number->string (slide-number doc index))
+                                          "")))))))
 
     ;; --- creation -----------------------------------------------------
 
@@ -314,6 +377,21 @@ Description: The document of a new deck: one title slide with title as
                 "unknown transition")
            (opt tr "duration" path (number-in? 0 10000) "bad duration"))))
 
+    (define max-footer-length 500)
+
+    (define (footer-string? s)
+      (and (string? s) (<= (string-length s) max-footer-length)))
+
+    (define (check-footer footer path)
+      (if (not (object? footer))
+          (problem path "not an object")
+          (check-all
+           (opt footer "text" path footer-string? "not a string (or too long)")
+           (opt footer "number" path boolean? "not a boolean")
+           (opt footer "date" path (one-of "auto" "fixed") "bad date kind")
+           (opt footer "dateText" path footer-string? "not a string (or too long)")
+           (opt footer "titleSlides" path boolean? "not a boolean"))))
+
     (define (check-slide slide path slide-ids)
       (if (not (object? slide))
           (problem path "not an object")
@@ -324,6 +402,7 @@ Description: The document of a new deck: one title slide with title as
            (req slide "layout" path valid-id? "bad layout id")
            (opt slide "hidden" path boolean? "not a boolean")
            (opt slide "background" path color? "not a colour")
+           (opt slide "footer" path not "may only be false")
            (let ((tr (assoc "transition" slide)))
              (and tr (check-transition (cdr tr) (string-append path ".transition"))))
            (let ((n (assoc "notes" slide)))
@@ -353,6 +432,8 @@ Description: #f if doc is a well-formed deck document for the design,
           (else
            (check-all
             (req doc "format" "document" (lambda (f) (eqv? f doc-format)) "unsupported format")
+            (let ((f (assoc "footer" doc)))
+              (and f (check-footer (cdr f) "footer")))
             (req doc "slides" "document"
                  (lambda (v) (and (vector? v) (<= 1 (vector-length v) max-slides)))
                  "must be an array of 1 to 1000 slides")

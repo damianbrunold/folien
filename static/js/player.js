@@ -94,6 +94,8 @@ export class Player {
       step: visibleOrder(slide, step),
       assetUrl: this.opts.assetUrl,
       onLink: this.opts.onLink,
+      doc: this.doc,
+      index: this.doc.slides.indexOf(slide),
     });
     wrap.appendChild(el);
     this.place(wrap);

@@ -21,6 +21,7 @@
           (scheme file)
           (scheme inexact)
           (srfi 69)
+          (only (srfi 19) current-date date->string)
           (scm fs)
           (scm pdf)
           (scm truetype)
@@ -60,14 +61,16 @@
 
     ;; Everything a drawing needs.
     (define-record-type ctx
-      (make-ctx pdf regular black design data-dir images)
+      (make-ctx pdf regular black design data-dir images doc today)
       ctx?
       (pdf ctx-pdf)
       (regular ctx-regular)
       (black ctx-black)
       (design ctx-design)
       (data-dir ctx-data-dir)
-      (images ctx-images))       ; sha -> pdf image or 'none
+      (images ctx-images)        ; sha -> pdf image or 'none
+      (doc ctx-doc)              ; for the footer fields
+      (today ctx-today))         ; the automatic date: "29.10.2026"
 
     (define (jr obj key . d) (apply jref obj key d))
 
@@ -524,6 +527,9 @@
             (when layout
               (vector-for-each (lambda (d) (draw-element ctx page #f d #t to-page))
                                (jr layout "decorations" #())))
+            (for-each (lambda (f) (draw-element ctx page #f f #t to-page))
+                      (footer-elements (ctx-doc ctx) design (slide-index (ctx-doc ctx) slide)
+                                       (ctx-today ctx)))
             (vector-for-each
              (lambda (el)
                (let ((b (jr el "build")))
@@ -533,6 +539,11 @@
         ;; A thin frame on handouts, where the slide is not the page.
         #t))
 
+    (define (slide-index doc slide)
+      (let ((slides (doc-slides doc)))
+        (let loop ((i 0))
+          (if (eq? (vector-ref slides i) slide) i (loop (+ i 1))))))
+
     ;; --- notes ----------------------------------------------------------
 
     ;; Notes as lines for a column of width w at size points: a list of
@@ -541,7 +552,7 @@
       (if (not notes)
           (values '() 0)
           (let ((plain-ctx (make-ctx (ctx-pdf ctx) (ctx-regular ctx) (ctx-black ctx)
-                                     notes-design (ctx-data-dir ctx) (ctx-images ctx))))
+                                     notes-design (ctx-data-dir ctx) (ctx-images ctx) #f "")))
             (layout-rich-text plain-ctx notes
                               `(("font" . "body") ("size" . ,size) ("color" . "#222222"))
                               w))))
@@ -608,7 +619,9 @@ Description: The deck document as a PDF (bytevector). options is an
                             (pdf-embed-truetype-font pdf (cdr ttf) "Inter-Black")
                             (find-design design-id)
                             data-dir
-                            (make-hash-table equal?)))
+                            (make-hash-table equal?)
+                            doc
+                            (date->string (current-date) "~d.~m.~Y")))
              (fs (frames doc steps?)))
         (pdf-set-metadata! pdf 'title title)
         (pdf-set-metadata! pdf 'creator "Folien")

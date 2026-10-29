@@ -19,6 +19,7 @@ import {
   fitInto,
   cssColor,
   cellStyle,
+  todayText,
 } from "./render.js";
 import * as rt from "./richtext-model.js";
 import { RichTextEditor } from "./richtext-editor.js";
@@ -152,6 +153,28 @@ function selectField(label, value, options, onChange) {
   select.value = value;
   select.addEventListener("change", () => onChange(select.value));
   return h("label", { class: "field" }, h("span", { text: label }), select);
+}
+
+// A text input that reports its value when it changes (on blur/Enter).
+function textField(label, value, onChange, opts = {}) {
+  const input = h("input", {
+    type: "text",
+    value: value || "",
+    maxLength: opts.maxLength,
+    placeholder: opts.placeholder,
+    "aria-label": opts.ariaLabel || label,
+  });
+  input.addEventListener("change", () => onChange(input.value));
+  return h("label", { class: "field" }, h("span", { text: label }), input);
+}
+
+function checkField(label, checked, onChange) {
+  return h(
+    "label",
+    { class: "check" },
+    h("input", { type: "checkbox", checked, on: { change: (e) => onChange(e.target.checked) } }),
+    " " + label,
+  );
 }
 
 // --- undo, changes, saving ------------------------------------------
@@ -684,7 +707,7 @@ function renderCanvas() {
     renderOverlay();
     return;
   }
-  const el = renderSlide(slide(), design, { editing: true, assetUrl });
+  const el = renderSlide(slide(), design, { editing: true, assetUrl, doc, index: cur });
   el.style.transform = "scale(" + scale + ")";
   ui.frame.replaceChildren(el);
   renderOverlay();
@@ -1212,7 +1235,7 @@ const unfits = new WeakMap();
 function drawThumb(frame, s) {
   const prev = unfits.get(frame);
   if (prev) prev();
-  unfits.set(frame, fitInto(frame, renderSlide(s, design, { assetUrl })));
+  unfits.set(frame, fitInto(frame, renderSlide(s, design, { assetUrl, doc, index: doc.slides.indexOf(s) })));
 }
 
 const thumbTimers = new Map();
@@ -1791,6 +1814,7 @@ function renderPanel() {
           ),
       ),
     ),
+    footerSection(),
   );
 
   parts.push(
@@ -1807,22 +1831,21 @@ function renderPanel() {
           if (c === undefined) delete s.background;
           else s.background = c;
         }), { defaultLabel: "Vom Design" })),
-      h(
-        "label",
-        { class: "check" },
-        h("input", {
-          type: "checkbox",
-          checked: !!s.hidden,
-          on: {
-            change: (e) =>
-              change(() => {
-                if (e.target.checked) s.hidden = true;
-                else delete s.hidden;
-              }),
-          },
-        }),
-        " Ausgeblendet",
+      // Hiding renumbers the slides after this one.
+      checkField("Ausgeblendet", !!s.hidden, (on) =>
+        change(() => {
+          if (on) s.hidden = true;
+          else delete s.hidden;
+        }, { structure: true }),
       ),
+      doc.footer
+        ? checkField("Fusszeile zeigen", s.footer !== false, (on) =>
+            change(() => {
+              if (on) delete s.footer;
+              else s.footer = false;
+            }),
+          )
+        : null,
       selectField("Übergang", (s.transition && s.transition.type) || "none", TRANSITIONS, (v) =>
         change(() => {
           if (v === "none") delete s.transition;
@@ -1862,6 +1885,33 @@ function renderPanel() {
     );
   }
   ui.panel.replaceChildren(...parts);
+}
+
+// The deck's footer fields (see "footer" in src/app-model.sld): changes
+// redraw every thumbnail. An empty footer object is dropped.
+function footerSection() {
+  const f = doc.footer || {};
+  const set = (k, v) =>
+    change(() => {
+      const next = Object.assign({}, doc.footer);
+      if (v === undefined || v === false || v === "") delete next[k];
+      else next[k] = v;
+      if (k === "date" && v !== "fixed") delete next.dateText;
+      if (k === "date" && v === "fixed" && !next.dateText) next.dateText = todayText();
+      if (Object.keys(next).some((x) => x !== "titleSlides")) doc.footer = next;
+      else delete doc.footer;
+    }, { structure: true });
+  return section(
+    "Fusszeile",
+    textField("Text", f.text, (v) => set("text", v.trim()), { maxLength: 500, ariaLabel: "Fusszeilentext" }),
+    selectField("Datum", f.date || "none", [["none", "Kein Datum"], ["auto", "Aktuelles Datum"], ["fixed", "Festes Datum"]],
+      (v) => set("date", v === "none" ? undefined : v)),
+    f.date === "fixed"
+      ? textField("Datumstext", f.dateText, (v) => set("dateText", v.trim()), { maxLength: 500, ariaLabel: "Festes Datum" })
+      : null,
+    checkField("Foliennummer", !!f.number, (on) => set("number", on)),
+    doc.footer ? checkField("Auch auf Titelfolien", !!f.titleSlides, (on) => set("titleSlides", on)) : null,
+  );
 }
 
 const TYPE_NAMES = {

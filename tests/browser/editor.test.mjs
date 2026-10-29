@@ -309,6 +309,39 @@ test("keyboard: Tab selects elements on the stage, arrows move them", async () =
   assert.equal(doc2.slides[0].elements[0].x, (x0 === undefined ? 160 : x0) + 10);
 });
 
+test("footer: text, slide number, date; off per slide", async () => {
+  await browser.eval("document.querySelectorAll('.ed-thumb')[1].click()");
+  const setValue = (label, value) =>
+    browser.eval(`(() => {
+      const e = document.querySelector('[aria-label="${label}"]');
+      e.value = ${JSON.stringify(value)};
+      e.dispatchEvent(new Event("change"));
+    })()`);
+  await setValue("Fusszeilentext", "Fuss");
+  await browser.eval(`(() => {
+    const c = [...document.querySelectorAll('.ed-panel label.check')].find((l) => l.textContent.includes("Foliennummer"));
+    c.querySelector("input").click();
+  })()`);
+  await setValue("Datum", "fixed");
+  await setValue("Festes Datum", "1. Mai");
+  let doc = await saved();
+  assert.deepEqual(doc.footer, { text: "Fuss", number: true, date: "fixed", dateText: "1. Mai" });
+  const fields = () =>
+    browser.eval(`[...document.querySelectorAll('.ed-frame .footer-field')].map((e) => e.dataset.field + "=" + e.textContent)`);
+  assert.deepEqual(await fields(), ["date=1. Mai", "text=Fuss", "number=2"]);
+  // Not on the title slide, and in the thumbnails.
+  assert.equal(await browser.eval("document.querySelectorAll('.ed-thumb')[0].querySelectorAll('.footer-field').length"), 0);
+  assert.equal(await browser.eval("document.querySelectorAll('.ed-thumb')[1].querySelectorAll('.footer-field').length"), 3);
+  await shot("10-footer");
+  await browser.eval(`(() => {
+    const c = [...document.querySelectorAll('.ed-panel label.check')].find((l) => l.textContent.includes("Fusszeile zeigen"));
+    c.querySelector("input").click();
+  })()`);
+  doc = await saved();
+  assert.equal(doc.slides[1].footer, false);
+  assert.deepEqual(await fields(), []);
+});
+
 test("a conflicting save shows the banner", async () => {
   await browser.eval("window.__putStatus = 409");
   await browser.eval("document.querySelector('.ed-title').focus()");

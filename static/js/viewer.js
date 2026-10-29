@@ -62,14 +62,14 @@ async function main() {
     b.append(el("span", "num", String(i + 1)), f);
     b.addEventListener("click", () => show(i));
     thumbs.appendChild(b);
-    fitInto(f, renderSlide(slide, design, { assetUrl }));
+    fitInto(f, renderSlide(slide, design, { assetUrl, doc: deck.doc, index: i }));
     return b;
   });
 
   function show(i) {
     current = Math.max(0, Math.min(slides.length - 1, i));
     if (unfit) unfit();
-    unfit = fitInto(frame, renderSlide(slides[current], design, ctx));
+    unfit = fitInto(frame, renderSlide(slides[current], design, { ...ctx, doc: deck.doc, index: current }));
     renderNotes(notes, slides[current].notes);
     counter.textContent = current + 1 + " / " + slides.length;
     prev.disabled = current === 0;

@@ -34,6 +34,10 @@ Implemented step by step, phase by phase:
       tables, clean-up and backup timers, Debian package; accessibility
       (design contrast WCAG AA, tested; keyboard selection on the editor
       stage with screen-reader announcements; skip link, status regions)
+- [x] Footer fields: footer text, slide number and date (today's or a
+      fixed text) per deck, placed by the design; not on title slides
+      unless wanted, switchable per slide; in the PDF, and in PowerPoint
+      as real slide-number and date fields
 
 ## Layout
 

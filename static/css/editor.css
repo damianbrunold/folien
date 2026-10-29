@@ -270,7 +270,7 @@ body.editor-body { overflow: hidden; }
   margin: 0 0 0.45rem;
 }
 .ed-panel .field > span:first-child { color: var(--muted); }
-.ed-panel input[type="number"] {
+.ed-panel input[type="number"], .ed-panel .field input[type="text"] {
   width: 5.5rem;
   height: 2rem;
   padding: 0 0.35rem;
@@ -281,6 +281,7 @@ body.editor-body { overflow: hidden; }
   border-radius: 0.35rem;
 }
 .ed-panel .field select { max-width: 10rem; }
+.ed-panel .field input[type="text"] { width: 10rem; min-width: 0; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.6rem; }
 .field-grid input[type="number"] { width: 4.2rem; }
 .ed-panel label.check { display: flex; align-items: center; gap: 0.35rem; margin: 0 0 0.45rem; }

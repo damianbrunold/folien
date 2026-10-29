@@ -172,4 +172,21 @@
           (test-equal 4 (count-of (apply string-append names) "ppt/media/")))))
     (delete-file file)))
 
+(test-group "footer fields"
+  (let* ((footed `(("footer" . (("text" . "Fusszeile") ("number" . #t) ("date" . "fixed")
+                                ("dateText" . "1. Mai")))
+                   ,@doc))
+         (bv (deck->pptx footed "zh" "Fuss" data-dir))
+         (file (string-append data-dir "/f.pptx")))
+    (test-assert "the PDF draws them" (has? (text-of (deck->pdf footed "zh" "Fuss" data-dir '())) "/Count 2"))
+    (let ((p (open-binary-output-file file))) (write-bytevector bv p) (close-port p))
+    (call-with-input-zip file
+      (lambda (z)
+        (let ((s1 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide1.xml")))
+              (s2 (utf8->string (zip-read-entry-bytevector z "ppt/slides/slide2.xml"))))
+          (test-assert "the text" (has? s1 "Fusszeile"))
+          (test-assert "the fixed date" (has? s1 "1. Mai"))
+          (test-assert "the number, hidden slides not counted" (has? s2 "<a:t>2</a:t>")))))
+    (delete-file file)))
+
 (test-end "folien export pdf")

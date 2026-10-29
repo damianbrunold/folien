@@ -5,7 +5,8 @@
 ;; draws it: text boxes with the deck's text (fonts, sizes, colours,
 ;; bullets and numbering, links), tables, shapes, lines, pictures (fit and crop),
 ;; MP4 videos (other videos as their poster frame); layouts' decorations
-;; become shapes of each slide. Slide transitions and builds become
+;; become shapes of each slide, the footer fields too (slide number and
+;; automatic date as PowerPoint fields). Slide transitions and builds become
 ;; PowerPoint transitions and animations, notes the slide notes. Hidden
 ;; slides are left out.
 ;;
@@ -20,6 +21,7 @@
           (scheme file)
           (scheme inexact)
           (scm fs)
+          (only (srfi 19) current-date date->string)
           (scm ooxml presentation)
           (scm svg raster)
           (app designs)
@@ -128,6 +130,8 @@
                                             (italic . ,(eq? (jr r "i") #t))
                                             (underline . ,(or (eq? (jr r "u") #t) (and link #t)))
                                             (color . ,(if (jr r "color") (hex design (jr r "color")) base-color))
+                                            ,@(let ((f (jr r "field")))
+                                                (if f `((field . ,(string->symbol f))) '()))
                                             ,@(if (and link (web-link? link)) `((link . ,link)) '()))))
                                       runs))))
                        acc)))))))
@@ -319,10 +323,12 @@
 Library: (app export-pptx)
 Description: The deck document as a PowerPoint file (bytevector)."
       (let ((design (find-design design-id))
-            (p (make-presentation)))
+            (p (make-presentation))
+            (today (date->string (current-date) "~d.~m.~Y"))
+            (auto-date? (equal? (jr (jr doc "footer" '()) "date") "auto")))
         (presentation-set-title! p title)
         (vector-for-each
-         (lambda (s)
+         (lambda (s index)
            (unless (eq? (jr s "hidden") #t)
              (let ((slide (presentation-add-slide! p))
                    (layout (find-layout design (jr s "layout"))))
@@ -333,11 +339,34 @@ Description: The deck document as a PowerPoint file (bytevector)."
                (when layout
                  (vector-for-each (lambda (d) (add-element! slide design data-dir #f d))
                                   (jr layout "decorations" #())))
+               (for-each (lambda (f) (add-element! slide design data-dir #f (field-element f auto-date?)))
+                         (footer-elements doc design index today))
                (vector-for-each (lambda (el) (add-element! slide design data-dir layout el))
                                 (jr s "elements" #()))
                (let ((notes (jr s "notes")))
                  (when notes
                    (slide-set-notes! slide
                      (paragraphs design notes '(("size" . 24) ("color" . "#000000") ("font" . "body")))))))))
-         (doc-slides doc))
-        (presentation->bytevector p)))))
+         (doc-slides doc)
+         (let ((n (vector-length (doc-slides doc))))
+           (let loop ((i (- n 1)) (acc '()))
+             (if (< i 0) (list->vector acc) (loop (- i 1) (cons i acc))))))
+        (presentation->bytevector p)))
+
+    ;; A footer element whose number or automatic date is a PowerPoint
+    ;; field (a fixed date stays text).
+    (define (field-element f auto-date?)
+      (let ((kind (cond ((equal? (jr f "field") "number") "slide-number")
+                        ((and auto-date? (equal? (jr f "field") "date")) "date")
+                        (else #f))))
+        (if (not kind)
+            f
+            (map (lambda (p)
+                   (if (equal? (car p) "text")
+                       `("text" ("paragraphs" . #((("runs" . #((("text" . ,(text-of f))
+                                                                ("field" . ,kind))))))))
+                       p))
+                 f))))
+
+    (define (text-of f)
+      (jr (vector-ref (jr (vector-ref (jr (jr f "text") "paragraphs") 0) "runs") 0) "text"))))
