@@ -51,7 +51,7 @@
 
     ;; The modules of the offline player, dependencies first.
     (define player-modules
-      '("render.js" "deck-nav.js" "player.js" "sync.js" "present-app.js" "offline.js"))
+      '("render.js" "shortcuts.js" "deck-nav.js" "player.js" "sync.js" "present-app.js" "offline.js"))
 
     ;; --- errors -------------------------------------------------------
 

@@ -97,6 +97,16 @@ test("the presentation: builds, hidden slides, black screen, end", async () => {
   await p.keys("4");
   await p.keys(Keys.enter);
   await p.waitFor("location.hash === '#4'");
+  // "?" shows the keys; while it is open, keys do not move the slides
+  await p.keys("?");
+  await p.waitFor("!!document.querySelector('dialog.shortcut-help[open]')");
+  assert.match(await p.eval("document.querySelector('dialog.shortcut-help').textContent"), /Schwarzer Bildschirm/);
+  await p.keys(Keys.left);
+  assert.equal(await p.eval("location.hash"), "#4");
+  await p.keys(Keys.escape);
+  await p.waitFor("!document.querySelector('dialog.shortcut-help')");
+  await p.keys(Keys.left);
+  await p.waitFor("location.hash === '#2'");
 });
 
 test("the presenter console keeps the presentation in step", async () => {

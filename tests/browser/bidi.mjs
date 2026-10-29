@@ -22,6 +22,10 @@ export const Keys = {
   right: "",
   down: "",
   delete: "",
+  alt: "",
+  f1: "",
+  f5: "",
+  f6: "",
 };
 
 export async function launchFirefox({ port = 9333 } = {}) {

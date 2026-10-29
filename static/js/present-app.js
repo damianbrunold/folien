@@ -9,7 +9,8 @@
 
 import { Player } from "./player.js";
 import * as nav from "./deck-nav.js";
-import { Sync, posFromHash, hashOf, presentKey } from "./sync.js";
+import { Sync, posFromHash, hashOf, presentKey, PRESENT_KEYS } from "./sync.js";
+import { installShortcutHelp, shortcutHelpOpen } from "./shortcuts.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -142,9 +143,22 @@ export function startPresentation(root, opts) {
     else document.documentElement.requestFullscreen().catch(() => {});
   }
 
+  installShortcutHelp("Tastenkürzel beim Präsentieren", () => [
+    [
+      "Präsentieren",
+      [
+        ...PRESENT_KEYS,
+        ["F", "Vollbild ein / aus"],
+        ["Esc", "Am Ende: die Präsentation verlassen"],
+        ["? / F1", "Diese Hilfe"],
+      ],
+    ],
+  ]);
+
   // A number typed before Enter jumps to that slide.
   let digits = "";
   document.addEventListener("keydown", (e) => {
+    if (shortcutHelpOpen()) return;
     if (/^[0-9]$/.test(e.key)) {
       digits += e.key;
       return;

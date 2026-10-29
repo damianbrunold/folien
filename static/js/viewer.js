@@ -1,8 +1,11 @@
 // The read-only deck viewer on the deck page: thumbnails, the current
 // slide large, its notes. Arrow keys, Page Up/Down, Home and End move
-// between slides; the slide number is kept in the URL hash (#3).
+// between slides; the slide number is kept in the URL hash (#3). F5
+// presents from the start, Shift+F5 from the slide shown, Alt+F5 opens the
+// presenter console there.
 //
-// The page provides <div id="viewer" data-deck-url data-designs-url>.
+// The page provides <div id="viewer" data-deck-url data-designs-url
+// data-present-url data-presenter-url>.
 
 import {
   designMap,
@@ -11,6 +14,7 @@ import {
   renderSlide,
   renderNotes,
 } from "./render.js";
+import { installShortcutHelp, isTyping } from "./shortcuts.js";
 
 const root = document.getElementById("viewer");
 
@@ -84,9 +88,29 @@ async function main() {
 
   prev.addEventListener("click", () => show(current - 1));
   next.addEventListener("click", () => show(current + 1));
+  installShortcutHelp("Tastenkürzel der Folienansicht", () => [
+    [
+      "Folien",
+      [
+        ["→ / ↓ / Bild ab", "Nächste Folie"],
+        ["← / ↑ / Bild auf", "Vorherige Folie"],
+        ["Pos1 / Ende", "Erste / letzte Folie"],
+        ["F5", "Präsentieren ab der ersten Folie"],
+        ["Umschalt+F5", "Präsentieren ab dieser Folie"],
+        ["Alt+F5", "Referentenansicht ab dieser Folie"],
+        ["? / F1", "Diese Hilfe"],
+      ],
+    ],
+  ]);
   document.addEventListener("keydown", (e) => {
-    if (e.target.closest("input, textarea, select")) return;
+    if (e.defaultPrevented || isTyping(e.target) || e.target.closest("dialog")) return;
     const k = e.key;
+    if (k === "F5" && !e.ctrlKey && !e.metaKey && root.dataset.presentUrl) {
+      e.preventDefault();
+      const base = e.altKey ? root.dataset.presenterUrl : root.dataset.presentUrl;
+      window.open(base + "#" + (e.shiftKey || e.altKey ? current + 1 : 1), "_blank");
+      return;
+    }
     if (k === "ArrowRight" || k === "ArrowDown" || k === "PageDown") show(current + 1);
     else if (k === "ArrowLeft" || k === "ArrowUp" || k === "PageUp") show(current - 1);
     else if (k === "Home") show(0);

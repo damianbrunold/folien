@@ -263,6 +263,22 @@ layout "Titel und Code", or Schrift: Code in the inspector): on the
 design's light tint with padding (`pad`, Innenabstand), Tab indents by
 two spaces. The exports pad them alike (PowerPoint: text insets).
 
+## Keyboard
+
+Everything can be done without a mouse; `?` or F1 shows the keys of the
+page (static/js/shortcuts.js). In the editor: F6 moves between the
+toolbar, slide list, slide, notes, properties and title; the toolbar is
+one Tab stop with arrows inside; on the slide Tab selects elements,
+arrows move them, Alt+arrows resize, Enter edits, Esc returns to the
+slide; while typing Ctrl+Enter goes to the next text field (after the
+last: a new slide), Ctrl+Shift+8/7 make lists, Ctrl+Shift+L/E/R/J align,
+Ctrl+Shift+. and , change the size, Ctrl+K links; Ctrl+M adds a slide,
+Ctrl+arrows in the slide list move it; F5, Shift+F5 and Alt+F5 present
+(from the start, from here, presenter console), also on the deck page.
+The presentation list: arrows between the cards, `/` searches, `n`
+starts a new presentation. Browsers keep some keys for themselves
+(Firefox: Ctrl+Shift+J opens its console).
+
 ## Maintenance and backups
 
 `bin/maintenance.scm` (nightly, `folien-maintenance.timer`) deletes decks

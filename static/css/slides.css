@@ -180,3 +180,39 @@
   .viewer-thumbs { flex-direction: row; max-height: none; overflow-x: auto; }
   .thumb { flex: 0 0 8rem; }
 }
+
+/* The keyboard help (static/js/shortcuts.js), on every page, the offline
+   player included (hence here and not in app.css). */
+.shortcut-help {
+  max-width: min(46rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border, #cccccc);
+  border-radius: 8px;
+  background: var(--bg, #ffffff);
+  color: var(--fg, #1a1a1a);
+  font: 15px/1.45 system-ui, sans-serif;
+}
+.shortcut-help::backdrop { background: rgb(0 0 0 / 0.45); }
+.shortcut-help h2 { margin: 0 0 0.75rem; font-size: 1.25rem; }
+.shortcut-help h3 { margin: 1rem 0 0.4rem; font-size: 1rem; }
+.shortcut-help dl {
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+.shortcut-help dt { white-space: nowrap; }
+.shortcut-help dd { margin: 0; }
+.shortcut-help kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border: 1px solid var(--border, #cccccc);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 0.85em/1.5 ui-monospace, monospace;
+  text-align: center;
+}
+.shortcut-help-actions { margin-top: 1.25rem; text-align: right; }

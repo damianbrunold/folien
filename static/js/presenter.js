@@ -8,7 +8,8 @@
 import { Player } from "./player.js";
 import { renderSlide, renderNotes, fitInto } from "./render.js";
 import * as nav from "./deck-nav.js";
-import { Sync, posFromHash, loadDeck, presentKey } from "./sync.js";
+import { Sync, posFromHash, loadDeck, presentKey, PRESENT_KEYS } from "./sync.js";
+import { installShortcutHelp, shortcutHelpOpen } from "./shortcuts.js";
 
 const root = document.getElementById("presenter");
 const urls = root.dataset;
@@ -260,8 +261,15 @@ async function main() {
     root.appendChild(box);
   }
 
+  installShortcutHelp("Tastenkürzel in der Referentenansicht", () => [
+    [
+      "Präsentation steuern",
+      [...PRESENT_KEYS, ["Tab", "Zu den Knöpfen (Zeit, Notizen, Schwarz …)"], ["? / F1", "Diese Hilfe"]],
+    ],
+  ]);
+
   document.addEventListener("keydown", (e) => {
-    if (e.target.closest("input, textarea, select")) return;
+    if (shortcutHelpOpen() || e.target.closest("input, textarea, select")) return;
     const what = presentKey(e);
     if (what && what !== "fullscreen") {
       e.preventDefault();

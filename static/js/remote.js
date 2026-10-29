@@ -5,6 +5,7 @@
 
 import * as nav from "./deck-nav.js";
 import { renderNotes } from "./render.js";
+import { installShortcutHelp, shortcutHelpOpen } from "./shortcuts.js";
 import { Sync, loadDeck } from "./sync.js";
 
 const root = document.getElementById("remote");
@@ -82,7 +83,19 @@ async function main() {
     render();
     sync.remote({ type: "blank", blank: blanked });
   });
+  installShortcutHelp("Tastenkürzel der Fernbedienung", () => [
+    [
+      "Fernbedienung",
+      [
+        ["→ / Bild ab / Leertaste", "Weiter"],
+        ["← / Bild auf", "Zurück"],
+        ["? / F1", "Diese Hilfe"],
+      ],
+    ],
+  ]);
   document.addEventListener("keydown", (e) => {
+    if (shortcutHelpOpen()) return;
+    if (e.target.closest && e.target.closest("button") && e.key === " ") return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") goto(nav.next(doc, pos));
     else if (e.key === "ArrowLeft" || e.key === "PageUp") goto(nav.prev(doc, pos));
     else return;

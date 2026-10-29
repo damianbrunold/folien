@@ -147,6 +147,16 @@ export async function loadDeck(urls) {
   return { deck, doc: deck.doc, design };
 }
 
+// The keys of presenting, for the keyboard help (presentKey reads them).
+export const PRESENT_KEYS = [
+  ["→ / ↓ / Bild ab / Leertaste / Enter / N", "Weiter (nächster Aufbauschritt oder nächste Folie)"],
+  ["← / ↑ / Bild auf / Rücktaste / P", "Zurück"],
+  ["Pos1 / Ende", "Erste / letzte Folie"],
+  ["Ziffern+Enter", "Zur Folie mit dieser Nummer"],
+  ["B / .", "Schwarzer Bildschirm (nochmals: zurück)"],
+  ["W / ,", "Weisser Bildschirm (nochmals: zurück)"],
+];
+
 // The keys of presenting, shared by the presentation and the console.
 export function presentKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;

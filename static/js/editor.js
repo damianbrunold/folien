@@ -25,6 +25,7 @@ import * as rt from "./richtext-model.js";
 import { RichTextEditor } from "./richtext-editor.js";
 import * as ops from "./doc-ops.js";
 import * as up from "./upload.js";
+import { installShortcutHelp } from "./shortcuts.js";
 
 const root = document.getElementById("editor");
 const urls = root.dataset;
@@ -365,11 +366,12 @@ document.addEventListener("visibilitychange", () => {
 
 // Opens a presenting window at the current slide, with what is unsaved
 // saved first.
-async function openPresenting(base) {
+// from: the slide index to start at (default the current slide).
+async function openPresenting(base, from = cur) {
   if (editing) stopEditing();
   const w = window.open("about:blank", "_blank");
   await save();
-  if (w) w.location.href = base + "#" + (cur + 1);
+  if (w) w.location.href = base + "#" + (from + 1);
 }
 
 // --- the skeleton ---------------------------------------------------
@@ -431,7 +433,8 @@ function buildSkeleton() {
     class: "ed-stage",
     tabIndex: 0,
     role: "group",
-    "aria-label": "Folie: Tab wählt ein Element, Pfeiltasten verschieben, Enter bearbeitet, Entf löscht",
+    "aria-label":
+      "Folie: Tab wählt ein Element, Pfeiltasten verschieben, Enter bearbeitet, Entf löscht, F1 zeigt alle Tastenkürzel",
   });
   ui.live = h("div", { class: "visually-hidden", role: "status", "aria-live": "polite" });
   ui.frame = h("div", { class: "ed-frame" });
@@ -459,6 +462,7 @@ function buildSkeleton() {
   );
 
   buildToolbar();
+  wireToolbarKeys();
   new ResizeObserver(layoutStage).observe(ui.stage);
   wireStage();
   wireSlideList();
@@ -507,23 +511,23 @@ function buildToolbar() {
   ui.size.addEventListener("change", () => fmt().setSize(parseInt(ui.size.value, 10)));
   ui.colorSlot = h("span", { class: "tb-color" });
   ui.alignBtns = [
-    ["left", "⯇", "Linksbündig"],
-    ["center", "≡", "Zentriert"],
-    ["right", "⯈", "Rechtsbündig"],
-    ["justify", "☰", "Blocksatz"],
+    ["left", "⯇", "Linksbündig (Strg+Umschalt+L)"],
+    ["center", "≡", "Zentriert (Strg+Umschalt+E)"],
+    ["right", "⯈", "Rechtsbündig (Strg+Umschalt+R)"],
+    ["justify", "☰", "Blocksatz (Strg+Umschalt+J)"],
   ].map(([v, l, title]) => {
     const b = tb(l, title, () => fmt().setParagraphProps({ align: v }));
     b.dataset.align = v;
     return b;
   });
-  ui.bullets = tb("•", "Aufzählung", () => fmt().toggleList("bullet"));
-  ui.numbers = tb("1.", "Nummerierung", () => fmt().toggleList("number"));
+  ui.bullets = tb("•", "Aufzählung (Strg+Umschalt+8)", () => fmt().toggleList("bullet"));
+  ui.numbers = tb("1.", "Nummerierung (Strg+Umschalt+7)", () => fmt().toggleList("number"));
   ui.outdent = tb("⇤", "Ebene höher (Umschalt+Tab)", () => fmt().shiftLevel(-1));
   ui.indent = tb("⇥", "Ebene tiefer (Tab)", () => fmt().shiftLevel(1));
-  ui.link = tb("🔗", "Link", setLink);
+  ui.link = tb("🔗", "Link (Strg+K)", setLink);
 
-  ui.front = tb("⤒", "In den Vordergrund", () => zOrder("front"));
-  ui.back = tb("⤓", "In den Hintergrund", () => zOrder("back"));
+  ui.front = tb("⤒", "In den Vordergrund (Strg+Umschalt+↑)", () => zOrder("front"));
+  ui.back = tb("⤓", "In den Hintergrund (Strg+Umschalt+↓)", () => zOrder("back"));
   ui.del = tb("🗑", "Löschen (Entf)", deleteSelected);
 
   t.append(
@@ -650,6 +654,55 @@ function setLink() {
   else window.alert("Dieser Link ist nicht erlaubt.");
 }
 
+// The toolbar is one Tab stop (the control last used, else the first);
+// Left, Right, Home and End move within it.
+let toolbarCurrent = null;
+
+function toolbarItems() {
+  return [...ui.toolbar.querySelectorAll("button, select, input")].filter(
+    (x) => !x.disabled && x.offsetParent !== null,
+  );
+}
+
+function fixToolbarTabStops() {
+  const items = toolbarItems();
+  if (!items.includes(toolbarCurrent)) toolbarCurrent = items[0] || null;
+  for (const x of ui.toolbar.querySelectorAll("button, select, input")) {
+    x.tabIndex = x === toolbarCurrent ? 0 : -1;
+  }
+}
+
+function focusToolbar() {
+  fixToolbarTabStops();
+  if (toolbarCurrent) toolbarCurrent.focus();
+}
+
+function wireToolbarKeys() {
+  ui.toolbar.addEventListener("focusin", (e) => {
+    if (e.target.matches("button, select, input")) {
+      toolbarCurrent = e.target;
+      fixToolbarTabStops();
+    }
+  });
+  ui.toolbar.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const items = toolbarItems();
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    let j;
+    if (e.key === "ArrowRight") j = (i + 1) % items.length;
+    else if (e.key === "ArrowLeft") j = (i - 1 + items.length) % items.length;
+    else if (e.key === "Home") j = 0;
+    else if (e.key === "End") j = items.length - 1;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    toolbarCurrent = items[j];
+    fixToolbarTabStops();
+    items[j].focus();
+  });
+}
+
 function updateToolbar() {
   if (!ui.toolbar) return;
   ui.undoBtn.disabled = !undoStack.length && !editing;
@@ -685,6 +738,7 @@ function updateToolbar() {
       : h("span", { class: "muted", text: "" }),
   );
   ui.front.disabled = ui.back.disabled = ui.del.disabled = sel.length === 0;
+  fixToolbarTabStops();
 }
 
 // --- the stage ------------------------------------------------------
@@ -1089,7 +1143,11 @@ function startEditing(id, selectAll, clickEvent, cell) {
       if (e.key === "Escape") {
         e.preventDefault();
         stopEditing();
-      } else globalKeys(e);
+        focusStage();
+      } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey) {
+        e.preventDefault();
+        nextField(e.shiftKey ? -1 : 1);
+      } else if (!globalKeys(e)) commandKeys(e);
     },
     pasteFiles: (files) => {
       const media = up.mediaFiles(files);
@@ -1156,8 +1214,8 @@ function renderNotesEditor() {
     },
     selectionChange: updateToolbar,
     keydown: (e) => {
-      if (e.key === "Escape") ui.notesBody.blur();
-      else globalKeys(e);
+      if (e.key === "Escape") focusStage();
+      else if (!globalKeys(e)) commandKeys(e);
     },
   });
 }
@@ -1175,10 +1233,16 @@ function notesDesign() {
 
 function wireSlideList() {
   ui.slides.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowRight") selectSlide(cur + 1);
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key === "ArrowUp") {
+      if (cur > 0) moveSlide(cur, cur - 1);
+    } else if (mod && e.key === "ArrowDown") {
+      if (cur < doc.slides.length - 1) moveSlide(cur, cur + 1);
+    } else if (mod && e.key === "d") duplicateSlide();
+    else if (mod) return;
+    else if (e.key === "ArrowDown" || e.key === "ArrowRight") selectSlide(cur + 1);
     else if (e.key === "ArrowUp" || e.key === "ArrowLeft") selectSlide(cur - 1);
     else if (e.key === "Delete" || e.key === "Backspace") deleteSlide();
-    else if ((e.ctrlKey || e.metaKey) && e.key === "d") duplicateSlide();
     else return;
     e.preventDefault();
     e.stopPropagation();
@@ -1341,6 +1405,12 @@ function addElement(el) {
     slide().elements.push(el);
     sel = [el.id];
   });
+  // so that arrows move it, Enter edits it
+  focusStage();
+}
+
+function focusStage() {
+  ui.stage.focus({ preventScroll: true });
 }
 
 function insertTextBox() {
@@ -1745,15 +1815,196 @@ function globalKeys(e) {
   return true;
 }
 
+installShortcutHelp("Tastenkürzel im Editor", () => [
+  [
+    "Überall",
+    [
+      ["F6 / Umschalt+F6", "Nächster / vorheriger Bereich: Werkzeuge, Folien, Folie, Notizen, Eigenschaften, Titel"],
+      ["Strg+M", "Neue Folie nach der aktuellen"],
+      ["F5", "Präsentieren ab der ersten Folie"],
+      ["Umschalt+F5", "Präsentieren ab der aktuellen Folie"],
+      ["Alt+F5", "Referentenansicht ab der aktuellen Folie"],
+      ["Strg+Z / Strg+Y", "Rückgängig / Wiederholen"],
+      ["Strg+S", "Speichern"],
+      ["? / F1", "Diese Hilfe"],
+    ],
+  ],
+  [
+    "Folie (Bereich «Folie»)",
+    [
+      ["Tab / Umschalt+Tab", "Nächstes / vorheriges Element wählen"],
+      ["Enter / F2", "Gewähltes Textfeld oder Tabelle bearbeiten"],
+      ["Pfeiltasten", "Element verschieben (mit Umschalt: um 10)"],
+      ["Alt+Pfeiltasten", "Element vergrössern oder verkleinern (mit Umschalt: um 10)"],
+      ["Strg+Umschalt+↑ / ↓", "In den Vordergrund / Hintergrund"],
+      ["Strg+D", "Duplizieren"],
+      ["Strg+A", "Alle Elemente wählen"],
+      ["Entf", "Löschen"],
+      ["Esc", "Auswahl aufheben"],
+      ["Bild auf / Bild ab", "Vorherige / nächste Folie"],
+    ],
+  ],
+  [
+    "Text bearbeiten",
+    [
+      ["Esc", "Fertig, zurück zur Folie (das Textfeld bleibt gewählt)"],
+      ["Strg+Enter / Strg+Umschalt+Enter", "Nächstes / vorheriges Textfeld; nach dem letzten eine neue Folie"],
+      ["Strg+B / Strg+I / Strg+U", "Fett / Kursiv / Unterstrichen"],
+      ["Strg+E", "Code"],
+      ["Strg+K", "Link"],
+      ["Strg+Umschalt+8 / 7", "Aufzählung / Nummerierung"],
+      ["Tab / Umschalt+Tab", "Listenebene tiefer / höher (in Code: einrücken; in Tabellen: nächste Zelle)"],
+      ["Strg+Umschalt+L / E / R / J", "Links / zentriert / rechts / Blocksatz"],
+      ["Strg+Umschalt+. / ,", "Schrift grösser / kleiner"],
+    ],
+  ],
+  [
+    "Folienliste",
+    [
+      ["↑ / ↓", "Vorherige / nächste Folie"],
+      ["Strg+↑ / Strg+↓", "Folie nach oben / unten verschieben"],
+      ["Strg+D", "Folie duplizieren"],
+      ["Entf", "Folie löschen"],
+    ],
+  ],
+  [
+    "Werkzeuge",
+    [
+      ["← / →", "Nächstes / vorheriges Werkzeug"],
+      ["Pos1 / Ende", "Erstes / letztes Werkzeug"],
+      ["Enter / Leertaste", "Werkzeug ausführen"],
+    ],
+  ],
+]);
+
+// Keys that work everywhere in the editor, also while typing: formatting
+// (the selected elements' text or the text being edited), new slides,
+// presenting, moving between the editor's regions.
+function commandKeys(e) {
+  const mod = e.ctrlKey || e.metaKey;
+  let run = null;
+  if (e.key === "F5" && !mod) {
+    run = () => openPresenting(e.altKey ? urls.presenterUrl : urls.presentUrl, e.shiftKey || e.altKey ? cur : 0);
+  } else if (e.key === "F6" && !mod && !e.altKey) {
+    run = () => cycleRegion(e.shiftKey ? -1 : 1);
+  } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "m") {
+    run = newSlideAfter;
+  } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+    run = setLink;
+  } else if (mod && e.shiftKey && !e.altKey) {
+    // by e.code: Shift changes the key's character with the layout
+    const f = () => fmt();
+    const actions = {
+      Digit8: () => f().toggleList("bullet"),
+      Digit7: () => f().toggleList("number"),
+      KeyL: () => f().setParagraphProps({ align: "left" }),
+      KeyE: () => f().setParagraphProps({ align: "center" }),
+      KeyR: () => f().setParagraphProps({ align: "right" }),
+      KeyJ: () => f().setParagraphProps({ align: "justify" }),
+      Period: () => stepSize(1),
+      Comma: () => stepSize(-1),
+    };
+    if (actions[e.code]) run = () => fmt().enabled && actions[e.code]();
+  }
+  if (!run) return false;
+  e.preventDefault();
+  run();
+  return true;
+}
+
+// The next larger (dir 1) or smaller font size of the toolbar's list.
+function stepSize(dir) {
+  const f = fmt();
+  const size = f.markValue("size") || f.baseSize();
+  const next = dir > 0 ? SIZES.find((s) => s > size) : [...SIZES].reverse().find((s) => s < size);
+  if (next) f.setSize(next);
+  updateToolbar();
+}
+
+// A new slide after the current one, in its layout (after a title or
+// chapter slide: title and content), its first text field edited.
+function newSlideAfter() {
+  if (editing) stopEditing();
+  const layout = ["title", "section", "blank"].includes(slide().layout) ? "title-content" : slide().layout;
+  addSlide(layout);
+  const first = textFields()[0];
+  if (first) startEditing(first.id, true);
+  else focusStage();
+}
+
+// The slide's text fields (text boxes, tables) top to bottom, left to
+// right.
+function textFields() {
+  return slide()
+    .elements.filter((el) => el.type === "text" || el.type === "table")
+    .map((el) => ({ el, b: ops.bounds(resolved(el)) }))
+    .sort((a, b) => a.b.y - b.b.y || a.b.x - b.b.x)
+    .map((x) => x.el);
+}
+
+// Ctrl+Enter while typing: the next text field (Shift: the previous);
+// after the last one a new slide, as PowerPoint does.
+function nextField(dir) {
+  const fields = textFields();
+  const i = editing ? fields.findIndex((el) => el.id === editing.id) : -1;
+  const next = fields[i + dir];
+  if (next) {
+    stopEditing();
+    sel = [next.id];
+    startEditing(next.id, false);
+  } else if (dir > 0) newSlideAfter();
+}
+
+// F6: toolbar, slides, slide, notes, properties, title, around.
+function cycleRegion(dir) {
+  if (editing) stopEditing();
+  const regions = [
+    [ui.toolbar, () => focusToolbar()],
+    [ui.slides, () => ui.slides.focus()],
+    [ui.stage, focusStage],
+    [ui.notesBody, () => ui.notesBody.focus()],
+    [ui.panel, () => (ui.panel.querySelector("input, select, button, [tabindex='0']") || ui.panel).focus()],
+    [ui.title, () => ui.title.focus()],
+  ];
+  const at = regions.findIndex(([r]) => r.contains(document.activeElement));
+  const j = at < 0 ? (dir > 0 ? 0 : regions.length - 1) : (at + dir + regions.length) % regions.length;
+  regions[j][1]();
+}
+
+function resizeSelected(dw, dh) {
+  change(() => {
+    for (const el of selectedEls()) {
+      ownGeometry(el);
+      el.w = Math.max(1, el.w + dw);
+      if (el.type !== "line") el.h = Math.max(1, el.h + dh);
+      else el.h = el.h + dh;
+    }
+  });
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
+  if (e.target.closest && e.target.closest("dialog")) return; // the help, a prompt
   if (inFormField(e.target)) {
-    if (!e.target.closest("[contenteditable=true]")) globalKeys(e);
+    if (!e.target.closest("[contenteditable=true]") && !globalKeys(e)) commandKeys(e);
     return; // the text editors handle their own keys
   }
-  if (globalKeys(e)) return;
+  if (globalKeys(e) || commandKeys(e)) return;
   const mod = e.ctrlKey || e.metaKey;
   const step = e.shiftKey ? 10 : 1;
+  const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  // Alt+arrows resize; Ctrl+Shift+Up/Down to the front or back.
+  if (arrows[e.key] && e.altKey && !mod && sel.length) {
+    const [dx, dy] = arrows[e.key];
+    resizeSelected(dx * step, dy * step);
+    e.preventDefault();
+    return;
+  }
+  if (mod && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && sel.length) {
+    zOrder(e.key === "ArrowUp" ? "front" : "back");
+    e.preventDefault();
+    return;
+  }
   switch (e.key) {
     case "Delete":
     case "Backspace":
