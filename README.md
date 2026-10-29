@@ -52,6 +52,7 @@ Implemented step by step, phase by phase:
 bin/server.scm        load the config, run migrations, serve
 bin/dev-server.scm    auto-reloading dev supervisor
 bin/seed-admin.scm    create the first admin (prompts for a password)
+bin/reset-password.scm  set a new password for a user (prompts for it)
 bin/init-config.scm   write a new config file (used by deploy/install.sh)
 bin/gen-secret.scm    print a new session secret (for key rotation)
 bin/seed-demo.scm     create two demo decks (one per design) for a user
