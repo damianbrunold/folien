@@ -33,6 +33,7 @@
           (scm net http middleware)
           (scm net websocket)
           (only (scm qr) qr-encode qr->svg)
+          (only (scm net http cookies) parse-cookie-header cookie-ref format-set-cookie)
           (app site)
           (app db)
           (app users)
@@ -375,7 +376,8 @@ Description: Builds the app's request handler. settings is an alist:
                      (setting settings 'session-max-age)
                      `((path . ,(cookie-path site))
                        (secure? . ,(setting settings 'secure-cookies?))))
-                    db))
+                    db
+                    (setting settings 'session-secret)))
              (router (make-router)))
 
         (define (route! method path handler)
@@ -442,6 +444,46 @@ Description: Builds the app's request handler. settings is an alist:
                           (not (char=? (string-ref s i) #\\))
                           (loop (+ i 1)))))
                s))
+
+        ;; --- remote links ---
+        ;; A phone that scanned the remote's QR code holds a remote link
+        ;; token in the folien_remote cookie. It counts, as the user who
+        ;; made it, for the remote's own requests and only for its deck: the
+        ;; remote page, the deck's JSON, the designs, and the event stream
+        ;; and socket. Everything else wants a session.
+
+        (define remote-cookie "folien_remote")
+
+        ;; The remote link token in the request's cookie, or #f.
+        (define (remote-token req)
+          (let ((h (http-request-header req "Cookie")))
+            (and h (cookie-ref (parse-cookie-header h) remote-cookie))))
+
+        ;; The user a remote link token stands for, for deck-id (#f: the
+        ;; deck the token names), or #f.
+        (define (token-user token deck-id)
+          (let ((deck (or deck-id (remote-token-deck token))))
+            (and deck
+                 (remote-token-user auth token deck
+                                    (lambda (uid) (deck-remote-epoch db uid deck))
+                                    (current-second)))))
+
+        ;; The session's user, or the remote link's for this deck.
+        (define (remote-user req deck-id)
+          (or (session-user auth req)
+              (let ((t (remote-token req))) (and t (token-user t deck-id)))))
+
+        ;; As api-signed-in, but a remote link for the route's deck (or,
+        ;; without :id, for any deck) counts too.
+        (define (api-remote handler)
+          (lambda (req params)
+            (let ((user (remote-user req (params-ref params "id"))))
+              (if user (handler req params user) (json-error 401 "not signed in")))))
+
+        (define (remote-cookie-header token)
+          (cons "Set-Cookie"
+                (apply format-set-cookie remote-cookie token remote-link-seconds (cookie-path site)
+                       (if (setting settings 'secure-cookies?) '() '(no-secure)))))
 
         ;; The same for the JSON API: 401 instead of a redirect.
         (define (api-signed-in handler)
@@ -668,12 +710,12 @@ Description: Builds the app's request handler. settings is an alist:
         ;; --- JSON API ---
 
         (route! "GET" "/api/designs"
-          (api-signed-in
+          (api-remote
             (lambda (req params user)
               (json-status 200 (list->vector designs)))))
 
         (route! "GET" "/api/decks/:id"
-          (api-signed-in
+          (api-remote
             (lambda (req params user)
               (let ((deck (load-deck db (col user "id") (params-ref params "id"))))
                 (if deck
@@ -858,17 +900,49 @@ Description: Builds the app's request handler. settings is an alist:
 
         (route! "GET" "/decks/:id/present" (deck-app-page present-page))
         (route! "GET" "/decks/:id/presenter" (deck-app-page presenter-page))
-        (route! "GET" "/decks/:id/remote" (deck-app-page remote-page))
+        ;; The remote. With ?t=<token> (from the QR code): a valid token
+        ;; goes into the remote cookie, and the address loses it.
+        (route! "GET" "/decks/:id/remote"
+          (lambda (req params)
+            (let* ((id (params-ref params "id"))
+                   (path (string-append "/decks/" id "/remote"))
+                   (t (let ((p (assoc "t" (url-query-params (http-request-url req))))) (and p (cdr p)))))
+              (cond
+                ((and t (token-user t id))
+                 (redirect path (remote-cookie-header t)))
+                ((and t (not (session-user auth req)))
+                 (make-http-response 403 '(("Content-Type" . "text/html; charset=utf-8"))
+                                     (remote-link-expired-page path)))
+                (t (redirect path))
+                (else
+                 (let* ((user (remote-user req id))
+                        (deck (and user (load-deck db (col user "id") id))))
+                   (cond (deck (html-response (remote-page deck)))
+                         (user (make-http-response 404 '(("Content-Type" . "text/html; charset=utf-8"))
+                                                   (not-found-page #f)))
+                         (else (redirect (string-append "/login?next=" (percent-encode path)))))))))))
 
-        ;; The remote's address as a QR code (SVG), for a phone's camera.
-        ;; origin: how the asking browser reaches this site
-        ;; ("https://folien.example.org"); the code holds origin + the
-        ;; deck's remote path, nothing else.
+        ;; A new remote epoch: every remote link (QR code) of the deck
+        ;; given out so far stops working. 204, or 404.
+        (route! "POST" "/api/decks/:id/remote-links/renew"
+          (api-signed-in
+            (lambda (req params user)
+              (cond ((not (same-origin? req)) (json-error 403 "cross-site request"))
+                    ((renew-remote-epoch! db (col user "id") (params-ref params "id"))
+                     (make-http-response 204 '() ""))
+                    (else (json-error 404 "no such deck"))))))
+
+        ;; The remote's address as a QR code (SVG), for a phone's camera,
+        ;; with a remote link token of the asking user: the phone needs no
+        ;; sign-in. origin: how the asking browser reaches this site
+        ;; ("https://folien.example.org"); the code holds origin, the
+        ;; deck's remote path and the token, nothing else.
         (route! "GET" "/decks/:id/remote-qr.svg"
           (signed-in
             (lambda (req params user)
               (let* ((id (params-ref params "id"))
-                     (deck (load-deck db (col user "id") id))
+                     (epoch (deck-remote-epoch db (col user "id") id))
+                     (deck epoch)
                      (origin (let ((p (assoc "origin" (url-query-params (http-request-url req)))))
                                (and p (web-origin? (cdr p)) (cdr p)))))
                 (cond
@@ -878,12 +952,14 @@ Description: Builds the app's request handler. settings is an alist:
                    (make-http-response
                     200
                     '(("Content-Type" . "image/svg+xml")
-                      ("Cache-Control" . "private, max-age=3600"))
-                    (qr->svg (qr-encode (string-append origin (url (string-append "/decks/" id "/remote"))))
+                      ("Cache-Control" . "no-store"))
+                    (qr->svg (qr-encode (string-append origin (url (string-append "/decks/" id "/remote"))
+                                                       "?t=" (make-remote-token auth user id epoch
+                                                                                (current-second))))
                              8 4))))))))
 
         (route! "GET" "/api/decks/:id/events"
-          (api-signed-in
+          (api-remote
             (lambda (req params user)
               (let ((id (params-ref params "id")))
                 (if (deck-status db (col user "id") id)
@@ -892,7 +968,7 @@ Description: Builds the app's request handler. settings is an alist:
 
         ;; The same, both ways, over one WebSocket (preferred by sync.js).
         (route! "GET" "/api/decks/:id/socket"
-          (api-signed-in
+          (api-remote
             (lambda (req params user)
               (let ((id (params-ref params "id")))
                 (cond ((not (deck-status db (col user "id") id)) (json-error 404 "no such deck"))
@@ -900,7 +976,7 @@ Description: Builds the app's request handler. settings is an alist:
                       (else (event-socket id)))))))
 
         (route! "POST" "/api/decks/:id/events"
-          (api-signed-in
+          (api-remote
             (lambda (req params user)
               (let* ((id (params-ref params "id"))
                      (body (http-request-body req))

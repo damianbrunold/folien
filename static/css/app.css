@@ -421,3 +421,6 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 .remote-qr-warning { color: var(--danger); font-size: 0.9rem; }
 .remote-qr-box { margin: 0.75rem 0 0; }
 .remote-qr-box p { margin: 0; }
+.remote-qr-about { margin: 0; max-width: 32rem; }
+.remote-qr-status { margin: 0.4rem 0 0; font-size: 0.9rem; }
+.remote-qr-status:empty { display: none; }

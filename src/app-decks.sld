@@ -23,6 +23,8 @@
           load-deck
           deck-status
           deck-access
+          deck-remote-epoch
+          renew-remote-epoch!
           can-edit?
           list-shares
           share-deck!
@@ -143,6 +145,27 @@ Description: The status of the deck with id if the user may see it
   (\"active\", \"archived\", \"trashed\"), else #f."
       (let ((a (deck-access db user-id id)))
         (and a (car a))))
+
+    (define (deck-remote-epoch db user-id id)
+      "Syntax: (deck-remote-epoch db user-id id)
+Library: (app decks)
+Description: The deck's remote epoch (remote links carry it; see
+  renew-remote-epoch!) if the user may see the deck, else #f."
+      (let ((row (db-row db
+                   (string-append "SELECT p.remote_epoch, " access-role " " access-from
+                                  "WHERE p.id = $1 AND " access-where)
+                   id (->int user-id))))
+        (and row (->int (col row "remote_epoch")))))
+
+    (define (renew-remote-epoch! db user-id id)
+      "Syntax: (renew-remote-epoch! db user-id id)
+Library: (app decks)
+Description: Raises the deck's remote epoch, which ends all remote links
+  given out so far, if the user may see the deck. The new epoch, or #f."
+      (and (deck-access db user-id id)
+           (begin
+             (db-exec db "UPDATE presentations SET remote_epoch = remote_epoch + 1 WHERE id = $1" id)
+             (deck-remote-epoch db user-id id))))
 
     (define (can-edit? role)
       "Syntax: (can-edit? role)

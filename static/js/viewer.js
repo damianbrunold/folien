@@ -36,9 +36,7 @@ function wireRemoteQr() {
     box = document.createElement("div");
     box.id = "remote-qr-box";
     box.className = "remote-qr-box";
-    const p = document.createElement("p");
-    p.textContent = "Mit der Kamera des Telefons scannen, dann mit demselben Konto anmelden:";
-    box.append(p, ...remoteQrParts(btn.dataset.remoteUrl));
+    box.append(...remoteQrParts(btn.dataset.remoteUrl, root.dataset.deckUrl));
     btn.closest(".actions").after(box);
     btn.setAttribute("aria-expanded", "true");
   });

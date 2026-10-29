@@ -261,12 +261,7 @@ async function main() {
       if (opener && opener.focus) opener.focus();
     };
     const close = button("Schliessen", "Schliessen", done);
-    box.append(
-      el("p", "", "Scannen Sie den Code mit der Kamera des Telefons (oder öffnen Sie die Adresse) " +
-        "und melden Sie sich mit demselben Konto an:"),
-      ...remoteQrParts(urls.remoteUrl),
-      close,
-    );
+    box.append(...remoteQrParts(urls.remoteUrl, urls.deckUrl), close);
     box.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         e.stopPropagation();

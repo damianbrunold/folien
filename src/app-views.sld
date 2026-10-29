@@ -11,7 +11,7 @@
           (app site)
           (app designs)
           (app users))            ; col
-  (export login-page decks-page deck-page editor-page present-page presenter-page remote-page
+  (export login-page remote-link-expired-page decks-page deck-page editor-page present-page presenter-page remote-page
           profile-page admin-page
           error-page not-found-page)
   (begin
@@ -91,6 +91,17 @@
                (input (@ (name "password") (type "password")
                          (autocomplete "current-password") (required #t))))
              (button (@ (type "submit") (class "primary")) "Anmelden")))))
+
+    ;; A remote QR code that no longer works (expired, renewed, or its
+    ;; maker lost access): sign in instead, then to the remote.
+    (define (remote-link-expired-page remote-path)
+      (page "Fernbedienung" #f
+        `(section (@ (class "card narrow"))
+           (h2 "Dieser Code gilt nicht mehr")
+           (p "Der QR-Code der Fernbedienung ist abgelaufen oder wurde ersetzt. "
+              "Zeigen Sie in der Referentenansicht einen neuen an, oder melden Sie sich an.")
+           (p (a (@ (class "button primary") (href ,(url (string-append "/login?next=" (percent-encode remote-path)))))
+                 "Anmelden")))))
 
     ;; --- deck lists ---------------------------------------------------
 

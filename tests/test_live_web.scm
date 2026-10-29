@@ -32,7 +32,9 @@
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app config) (app db) (app users) (app model) (app web) (app assets) (app maintenance))
+(import (app config) (app db) (app users) (app model) (app web) (app assets) (app maintenance)
+        (only (app auth) make-auth make-remote-token)
+        (only (app decks) deck-remote-epoch))
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien web (live database)")
@@ -49,12 +51,15 @@
              (config-ref cfg 'db-user "") (config-ref cfg 'db-password "")
              (config-ref cfg 'db-name "") 2))
   (define data-dir (mktempdir '(prefix . "folien-live-data")))
+  (define secret (base64-encode (random-bytes 32)))
+  ;; mints remote links as the app does (same secret)
+  (define token-auth (make-auth #f db secret))
   (define app
     (make-app `((url-prefix . "")
                 (static-dir . ,(string-append root "/static"))
                 (data-dir . ,data-dir)
                 (db . ,db)
-                (session-secret . ,(base64-encode (random-bytes 32)))
+                (session-secret . ,secret)
                 (session-max-age . 3600)
                 (secure-cookies? . #f))))
   (define (send method url cookie . form)
@@ -239,6 +244,53 @@
             (test-equal 404 (status (qr "https%3A%2F%2Ffolien.example.org" dave)))
             (for-each (lambda (bad) (test-equal bad 400 (status (qr bad carol))))
                       '("" "ftp%3A%2F%2Fx" "https%3A%2F%2Fx%2Fpath" "https%3A%2F%2Fuser%40x" "javascript%3Aalert(1)")))
+
+          ;; Remote links: the code's token opens the remote without a
+          ;; session, for this deck's remote only.
+          (let* ((remote (string-append "/decks/" id "/remote"))
+                 (carol-row (find-user-by-name db "carol"))
+                 (dave-row (find-user-by-name db "dave"))
+                 (now (current-second))
+                 (token (lambda (user deck at)
+                          (make-remote-token token-auth user deck (or (deck-remote-epoch db (col carol-row "id") deck) 0) at)))
+                 (good (token carol-row id now))
+                 (r (send "GET" (string-append remote "?t=" good) #f))
+                 (phone (cookie-of r))
+                 (as-phone (lambda (method url . form) (apply send method url phone form))))
+            (test-equal "the token goes into a cookie, out of the address" remote (location r))
+            (test-assert (has? phone "folien_remote="))
+            (test-assert "HttpOnly, SameSite=Strict"
+              (and (has? (http-response-header r "Set-Cookie") "HttpOnly")
+                   (has? (http-response-header r "Set-Cookie") "SameSite=Strict")))
+            (test-equal 200 (status (as-phone "GET" remote)))
+            (test-equal 200 (status (as-phone "GET" api)))
+            (test-equal 200 (status (as-phone "GET" "/api/designs")))
+            (test-equal 202 (status (send-json "POST" (string-append api "/events") phone
+                                               '(("type" . "goto") ("pos" . (("slide" . 0) ("step" . 0)))))))
+            ;; nothing else
+            (test-equal 401 (status (send-json "PUT" api phone '(("revision" . 1)))))
+            (test-assert (has? (location (as-phone "GET" (string-append "/decks/" id "/edit"))) "/login"))
+            (test-equal "/login" (location (as-phone "GET" "/")))
+            (test-equal 401 (status (as-phone "GET" (string-append api "/assets"))))
+            (test-equal 401 (status (as-phone "POST" (string-append api "/remote-links/renew"))))
+            ;; not valid: expired, forged, for another deck, made by
+            ;; someone without access
+            (for-each
+             (lambda (case)
+               (test-equal (car case) 403 (status (send "GET" (string-append remote "?t=" (cdr case)) #f))))
+             `(("expired" . ,(token carol-row id (- now (* 13 3600))))
+               ("forged" . ,(string-append (substring good 0 (- (string-length good) 4)) "beef"))
+               ("another deck" . ,(token carol-row "zzzzzzzzzzzz" now))
+               ("no access" . ,(token dave-row id now))
+               ("garbage" . "1.2.3")))
+            (test-assert "the expired page offers signing in"
+              (has? (body (send "GET" (string-append remote "?t=" (token carol-row id (- now (* 13 3600)))) #f))
+                    "/login?next="))
+            ;; a new code ends the old ones
+            (test-equal 204 (status (send "POST" (string-append api "/remote-links/renew") carol)))
+            (test-equal 401 (status (as-phone "GET" api)))
+            (test-equal 403 (status (send "GET" (string-append remote "?t=" good) #f)))
+            (test-equal 303 (status (send "GET" (string-append remote "?t=" (token carol-row id now)) #f))))
 
           ;; Signing in on a phone that scanned it: back to the remote.
           (let ((remote (string-append "/decks/" id "/remote")))

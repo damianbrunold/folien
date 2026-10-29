@@ -165,10 +165,7 @@ number and Enter jump). The "Referentenansicht" shows the current slide,
 what the next click brings, the notes, a timer and the clock; it opens
 the audience window (drag it to the projector and press F there) and
 both stay in step over a BroadcastChannel. The "Fernbedienung" (open it
-on a phone, signed in as the same user: the presenter console's
-"Fernbedienung" and the deck page's "QR-Code" show its address as a QR
-code, `GET /decks/<id>/remote-qr.svg?origin=…`, drawn with dabscm's
-`(scm qr)`; signing in comes back to the page asked for, `/login?next=`)
+on a phone, signed in as the same user, or by its QR code, see below)
 steers through the server, which
 relays every message to all windows of the deck (src/app-remote.sld):
 over a WebSocket, `GET /api/decks/<id>/socket`, both ways; where that
@@ -178,6 +175,25 @@ to it. Every open connection holds a server thread (`http-max-threads`);
 behind nginx the socket needs the upgrade headers of
 `deploy/nginx.conf.example`, and `X-Accel-Buffering: no` turns off
 buffering for the event stream.
+
+### The remote by QR code
+
+The presenter console's "Fernbedienung" and the deck page's "QR-Code"
+show a QR code (`GET /decks/<id>/remote-qr.svg?origin=…`, drawn with
+dabscm's `(scm qr)`): scanned with a phone's camera it opens the remote
+without signing in. The code holds a remote link, a token
+(`1.<user>.<deck>.<epoch>.<expiry>.<HMAC>`, src/app-auth.sld) signed
+with a key derived from `session-secret` over the user's password stamp.
+The remote page moves it into the `folien_remote` cookie (HttpOnly,
+SameSite=Strict) and drops it from the address. It counts as its maker
+only for that deck's remote, its JSON, the designs and the event
+stream/socket; it ends after 12 hours, when the password changes, when
+its maker loses access to the deck, or with "Neuen Code erzeugen"
+(`POST /api/decks/<id>/remote-links/renew`, raising the deck's
+`remote_epoch`), which ends all codes given out so far. Whoever holds a
+code can steer the deck and read its notes: do not show it to the
+audience. Without a code, the remote asks to sign in and comes back to
+it afterwards (`/login?next=`).
 
 ## Setup
 

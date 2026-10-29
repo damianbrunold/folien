@@ -143,7 +143,11 @@ test("the presenter console shows the remote's address as a QR code", async () =
   await presenter.eval("document.activeElement.click()");
   await presenter.waitFor("!!document.querySelector('.p-remote-info img.remote-qr')");
   const src = await presenter.eval("document.querySelector('.p-remote-info img.remote-qr').getAttribute('src')");
-  assert.equal(src, "/remote.html-qr.svg?origin=" + encodeURIComponent(server.url));
+  assert.ok(src.startsWith("/remote.html-qr.svg?origin=" + encodeURIComponent(server.url) + "&v="), src);
+  assert.match(await presenter.eval("document.querySelector('.p-remote-info').textContent"), /ohne Anmeldung/);
+  // renewing asks the server (here: no such endpoint) and says how it went
+  await presenter.eval("document.querySelector('.remote-qr-renew').click()");
+  await presenter.waitFor("document.querySelector('.remote-qr-status').textContent !== ''");
   // the test server is 127.0.0.1: a phone could not reach it
   assert.match(await presenter.eval("document.querySelector('.p-remote-info').textContent"), /erreicht nur dieser Computer/);
   await presenter.keys(Keys.escape);
