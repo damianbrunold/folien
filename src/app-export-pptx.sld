@@ -20,7 +20,6 @@
   (import (scheme base)
           (scheme char)
           (scheme file)
-          (scheme inexact)
           (only (srfi 19) current-date date->string)
           (scm fs)
           (scm ooxml presentation)

@@ -103,11 +103,6 @@
                      "\n"))
 
     ;; page with an optional module script.
-    (define (page-with-script title who script body)
-      (if script
-          (page title who body
-                `(script (@ (type "module") (src ,(asset script)))))
-          (page title who body)))
 
     ;; msg: #f, or (kind . text) with kind 'error or 'success.
     (define (notice msg)

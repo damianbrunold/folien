@@ -7,7 +7,6 @@
         (scm fs)
         (scm io)
         (scm module)
-        (scm string)
         (scm test))
 
 (define root

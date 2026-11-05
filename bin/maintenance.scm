@@ -6,7 +6,6 @@
 
 (import (scheme base)
         (scheme process-context)
-        (scheme write)
         (scm fs)
         (scm log)
         (scm module))

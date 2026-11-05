@@ -9,7 +9,6 @@
 
 (import (scheme base)
         (scheme process-context)
-        (scheme write)
         (scm datetime)
         (scm fs)
         (scm log)

@@ -21,7 +21,6 @@
 
 (define-library (app publish)
   (import (scheme base)
-          (scheme char)
           (only (srfi 19) current-date date->string)
           (scm crypto)
           (scm json simple)

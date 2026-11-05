@@ -24,7 +24,6 @@
           sort-entries
           tar-bytevector)
   (import (scheme base)
-          (scheme char)
           (srfi 1)
           (srfi 13)
           (srfi 95)

@@ -19,7 +19,6 @@
           (scm crypto)
           (scm crypto password)
           (scm net http session)
-          (app db)
           (app users))
   (export change-password!
           end-session

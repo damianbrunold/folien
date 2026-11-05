@@ -25,7 +25,6 @@
 ;; Not packaged: the dev server, the demo seeder, tests, install.sh.
 
 (import (scheme base)
-        (scheme char)
         (scheme file)
         (scheme process-context)
         (scheme time)

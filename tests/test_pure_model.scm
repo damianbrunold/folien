@@ -3,7 +3,6 @@
 ;; rely on. Run: scm tests/test_pure_model.scm
 
 (import (scheme base)
-        (scheme inexact)
         (scheme process-context)
         (scm fs)
         (scm json simple)

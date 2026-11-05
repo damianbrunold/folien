@@ -23,7 +23,6 @@
   (import (scheme base)
           (scheme char)
           (scheme file)
-          (scheme inexact)
           (scheme lazy)
           (only (srfi 19) current-date date->string)
           (srfi 69)

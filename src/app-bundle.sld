@@ -28,7 +28,6 @@
 
 (define-library (app bundle)
   (import (scheme base)
-          (scheme char)
           (scheme file)
           (scheme time)
           (scm crypto)

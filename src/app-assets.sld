@@ -17,8 +17,7 @@
           (scm fs)
           (scm net http request)
           (app db)
-          (app images)
-          (app users)) ; col
+          (app images)) ; col
   (export asset-file
           deck-asset
           ensure-asset-dir
