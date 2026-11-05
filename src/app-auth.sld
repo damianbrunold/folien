@@ -21,17 +21,17 @@
           (scm net http session)
           (app db)
           (app users))
-  (export make-auth
-          sign-in
-          session-user
-          start-session
+  (export change-password!
           end-session
-          change-password!
-          min-password-length
+          make-auth
           make-remote-token
-          remote-token-user
+          min-password-length
+          remote-link-seconds
           remote-token-deck
-          remote-link-seconds)
+          remote-token-user
+          session-user
+          sign-in
+          start-session)
   (begin
 
     (define min-password-length 8)
@@ -60,9 +60,11 @@ Description: Ties a (scm net http session) config to the database.
     (define remote-link-seconds (* 12 3600))
 
     (define (remote-mac auth uid deck epoch exp stamp)
-      (bytevector->hex
-       (hmac-sha256 (auth-remote-key auth)
-                    (string->utf8 (string-append "1|" uid "|" deck "|" epoch "|" exp "|" stamp)))))
+      (bytevector->hex (hmac-sha256 (auth-remote-key auth)
+                                    (string->utf8
+                                     (string-append "1|" uid "|" deck "|"
+                                                    epoch "|" exp "|"
+                                                    stamp)))))
 
     (define (->str x) (if (number? x) (number->string x) x))
 
@@ -76,7 +78,8 @@ Description: A remote link token for user's deck deck-id at its remote
             (exp (number->string (+ (exact (floor now)) remote-link-seconds)))
             (ep (number->string epoch)))
         (string-append "1." uid "." deck-id "." ep "." exp "."
-                       (remote-mac auth uid deck-id ep exp (password-stamp (col user "pass_hash"))))))
+                       (remote-mac auth uid deck-id ep exp
+                                   (password-stamp (col user "pass_hash"))))))
 
     (define (remote-token-user auth token deck-id epoch-of now)
       "Syntax: (remote-token-user auth token deck-id epoch-of now)
@@ -85,36 +88,57 @@ Description: The row of the user who made token, if it is a valid,
   unexpired remote link for deck-id: signed, the user's password
   unchanged, and its epoch the deck's current one. epoch-of: user id ->
   the deck's remote epoch if that user may see it, else #f. Else #f."
-      (let ((parts (and (string? token) (< (string-length token) 400) (split-dots token))))
+      (let
+          ((parts (and (string? token)
+                       (< (string-length token) 400)
+                       (split-dots token))))
         (and parts
              (= (length parts) 6)
              (equal? (car parts) "1")
              (auth-remote-key auth)
-             (let ((uid (list-ref parts 1)) (deck (list-ref parts 2)) (ep (list-ref parts 3))
-                   (exp (list-ref parts 4)) (mac (list-ref parts 5)))
+             (let ((uid (list-ref parts 1))
+                   (deck (list-ref parts 2))
+                   (ep (list-ref parts 3))
+                   (exp (list-ref parts 4))
+                   (mac (list-ref parts 5)))
                (and (equal? deck deck-id)
                     (string->number exp)
                     (> (string->number exp) now)
                     (string->number uid)
-                    (let ((user (load-user (auth-db auth) (string->number uid))))
+                    (let
+                        ((user (load-user (auth-db auth)
+                                          (string->number uid))))
                       (and user
-                           (same-text? mac (remote-mac auth uid deck ep exp
-                                                       (password-stamp (col user "pass_hash"))))
+                           (same-text? mac
+                                       (remote-mac
+                                        auth
+                                        uid
+                                        deck
+                                        ep
+                                        exp
+                                        (password-stamp
+                                         (col user "pass_hash"))))
                            (let ((current (epoch-of (string->number uid))))
-                             (and current (equal? (number->string current) ep)))
+                             (and current
+                                  (equal? (number->string current) ep)))
                            user)))))))
 
     (define (remote-token-deck token)
       "Syntax: (remote-token-deck token)
 Library: (app auth)
 Description: The deck id a remote link token names (unchecked), or #f."
-      (let ((parts (and (string? token) (< (string-length token) 400) (split-dots token))))
+      (let
+          ((parts (and (string? token)
+                       (< (string-length token) 400)
+                       (split-dots token))))
         (and parts (= (length parts) 6) (list-ref parts 2))))
 
     (define (split-dots s)
       (let loop ((i 0) (start 0) (acc '()))
-        (cond ((= i (string-length s)) (reverse (cons (substring s start i) acc)))
-              ((char=? (string-ref s i) #\.) (loop (+ i 1) (+ i 1) (cons (substring s start i) acc)))
+        (cond ((= i (string-length s))
+               (reverse (cons (substring s start i) acc)))
+              ((char=? (string-ref s i) #\.)
+               (loop (+ i 1) (+ i 1) (cons (substring s start i) acc)))
               (else (loop (+ i 1) start acc)))))
 
     ;; Compares all of both, so the time taken does not tell how much of a
@@ -125,11 +149,15 @@ Description: The deck id a remote link token names (unchecked), or #f."
              (if (= i (string-length a))
                  (= diff 0)
                  (loop (+ i 1)
-                       (if (char=? (string-ref a i) (string-ref b i)) diff 1))))))
+                       (if (char=? (string-ref a i) (string-ref b i))
+                           diff
+                           1))))))
 
     ;; Changes whenever the password (and so the hash) changes.
     (define (password-stamp hash)
-      (base64-encode (bytevector-copy (sha256-hash (string->utf8 hash)) 0 12)))
+      (base64-encode (bytevector-copy (sha256-hash (string->utf8 hash))
+                                      0
+                                      12)))
 
     (define (sign-in auth username password)
       "Syntax: (sign-in auth username password)
@@ -138,12 +166,15 @@ Description: The user row if password is right for username, else #f.
   Upgrades an outdated password hash on success."
       (let* ((db (auth-db auth))
              (user (find-user-by-name db username)))
-        (cond
-          ((not (password-verify password (and user (col user "pass_hash")))) #f)
-          ((password-needs-rehash? (col user "pass_hash"))
-           (set-password-hash! db (col user "id") (password-hash password))
-           (load-user db (col user "id")))
-          (else user))))
+        (cond ((not (password-verify password
+                                     (and user (col user "pass_hash"))))
+               #f)
+              ((password-needs-rehash? (col user "pass_hash"))
+               (set-password-hash! db
+                                   (col user "id")
+                                   (password-hash password))
+               (load-user db (col user "id")))
+              (else user))))
 
     (define (session-user auth req)
       "Syntax: (session-user auth req)
@@ -156,7 +187,8 @@ Description: The signed-in user's row, or #f if there is no valid session
                     (stamp (assq 'stamp s))
                     (user (and uid (load-user (auth-db auth) (cdr uid)))))
                (and user stamp
-                    (equal? (cdr stamp) (password-stamp (col user "pass_hash")))
+                    (equal? (cdr stamp)
+                            (password-stamp (col user "pass_hash")))
                     user)))))
 
     (define (start-session auth user)
@@ -165,7 +197,9 @@ Library: (app auth)
 Description: The Set-Cookie header pair that signs user in."
       (session-set-cookie (auth-session auth)
                           `((uid . ,(col user "id"))
-                            (stamp . ,(password-stamp (col user "pass_hash"))))))
+                            (stamp .
+                                   ,(password-stamp
+                                     (col user "pass_hash"))))))
 
     (define (end-session auth)
       "Syntax: (end-session auth)
@@ -178,5 +212,7 @@ Description: The Set-Cookie header pair that signs out."
 Library: (app auth)
 Description: Stores a new hash for user and returns the updated row. Other
   sessions of the user end; start a new one for this browser."
-      (set-password-hash! (auth-db auth) (col user "id") (password-hash new-password))
+      (set-password-hash! (auth-db auth)
+                          (col user "id")
+                          (password-hash new-password))
       (load-user (auth-db auth) (col user "id")))))

@@ -8,33 +8,39 @@
 ;; variable the tests are skipped.
 
 (import (scheme base)
+        (scheme file)
         (scheme process-context)
+        (scheme time)
         (scheme write)
-        (scm module)
-        (scm fs)
-        (scm log)
-        (scm string)
-        (scm test)
+        (srfi 18)
         (scm crypto)
         (scm crypto password)
+        (scm fs)
         (only (scm image) make-image image->png)
+        (scm json simple)
+        (scm log)
+        (scm module)
         (scm net http request)
         (scm net http response)
-        (scm json simple)
-        (scm zip)
-        (scheme file)
-        (scheme time)
-        (srfi 18)
+        (scm net http server)
         (scm net sockets)
-        (scm net http server))
+        (scm string)
+        (scm test)
+        (scm zip))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app config) (app db) (app users) (app model) (app web) (app assets) (app maintenance)
+(import (app assets)
         (only (app auth) make-auth make-remote-token)
-        (only (app decks) deck-remote-epoch))
+        (app config)
+        (app db)
+        (only (app decks) deck-remote-epoch)
+        (app maintenance)
+        (app model)
+        (app users)
+        (app web))
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien web (live database)")
@@ -47,9 +53,12 @@
 (define (run-tests cfg)
   (define fast-iterations 1000)
   (define db
-    (make-db (config-ref cfg 'db-host "127.0.0.1") (config-ref cfg 'db-port 5432)
-             (config-ref cfg 'db-user "") (config-ref cfg 'db-password "")
-             (config-ref cfg 'db-name "") 2))
+    (make-db (config-ref cfg 'db-host "127.0.0.1")
+             (config-ref cfg 'db-port 5432)
+             (config-ref cfg 'db-user "")
+             (config-ref cfg 'db-password "")
+             (config-ref cfg 'db-name "")
+             2))
   (define data-dir (mktempdir '(prefix . "folien-live-data")))
   (define secret (base64-encode (random-bytes 32)))
   ;; mints remote links as the app does (same secret)
@@ -65,13 +74,16 @@
   (define (send method url cookie . form)
     (parameterize ((log-port (open-output-string))
                    (password-pbkdf2-iterations fast-iterations))
-      (app (make-http-request
-            method url
-            (append (if cookie (list (cons "Cookie" cookie)) '())
-                    (if (pair? form)
-                        '(("Content-Type" . "application/x-www-form-urlencoded"))
-                        '()))
-            (if (pair? form) (car form) #f)))))
+      (app (make-http-request method url
+                              (append (if cookie
+                                          (list (cons "Cookie" cookie))
+                                          '())
+                                      (if
+                                       (pair? form)
+                                       '(("Content-Type" .
+                                          "application/x-www-form-urlencoded"))
+                                       '()))
+                              (if (pair? form) (car form) #f)))))
   (define (location r) (http-response-header r "Location"))
   (define (body r)
     (let ((b (http-response-body r)))
@@ -85,40 +97,51 @@
                      (string-append "username=" name "&password=" password))))
   (define (send-json method url cookie value)
     (parameterize ((log-port (open-output-string)))
-      (app (make-http-request
-            method url
-            (append (if cookie (list (cons "Cookie" cookie)) '())
-                    '(("Content-Type" . "application/json")))
-            (json->string value)))))
+      (app (make-http-request method url
+                              (append (if cookie
+                                          (list (cons "Cookie" cookie))
+                                          '())
+                                      '(("Content-Type" .
+                                         "application/json")))
+                              (json->string value)))))
   (define (json-body r) (json-parse (body r)))
   (define (filter-decks db title)
     (db-rows db "SELECT id FROM presentations WHERE title = $1" title))
   (define (send-bytes method url cookie bytes)
     (parameterize ((log-port (open-output-string)))
       (app (make-http-request method url
-                              (append (if cookie (list (cons "Cookie" cookie)) '())
-                                      '(("Content-Type" . "application/octet-stream")))
+                              (append (if cookie
+                                          (list (cons "Cookie" cookie))
+                                          '())
+                                      '(("Content-Type" .
+                                         "application/octet-stream")))
                               bytes))))
   (define (status r) (http-response-status r))
   ;; The deck id from a redirect to /decks/<id>.
-  (define (deck-id-of r) (substring (location r) 7 (string-length (location r))))
+  (define (deck-id-of r)
+    (substring (location r) 7 (string-length (location r))))
   (define (id->string x) (if (number? x) (number->string x) x))
-  (define (user-id name) (let ((id (col (find-user-by-name db name) "id")))
-                           (if (number? id) (number->string id) id)))
+  (define (user-id name)
+    (let ((id (col (find-user-by-name db name) "id")))
+      (if (number? id) (number->string id) id)))
 
   ;; A fresh schema, and an admin as bin/seed-admin.scm makes one.
-  (db-exec db "DROP TABLE IF EXISTS publication_assets, publications, snapshots, presentation_shares, presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
+  (db-exec db
+           "DROP TABLE IF EXISTS publication_assets, publications, snapshots, presentation_shares, presentation_assets, assets, presentations, user_roles, roles, users, schema_migrations")
   (parameterize ((log-port (open-output-string)))
     (migrate! db (string-append root "/migrations")))
   (with-db-transaction db
     (lambda (tx)
       (create-role! tx admin-role)
-      (assign-role-by-name!
-       tx
-       (create-user! tx "root"
-                     (parameterize ((password-pbkdf2-iterations fast-iterations))
-                       (password-hash "rootpassword")))
-       admin-role)))
+      (assign-role-by-name! tx
+                            (create-user!
+                             tx
+                             "root"
+                             (parameterize
+                                 ((password-pbkdf2-iterations
+                                   fast-iterations))
+                               (password-hash "rootpassword")))
+                            admin-role)))
 
   (let ((admin (sign-in "root" "rootpassword")))
     (test-group "admin signs in"
@@ -128,78 +151,112 @@
 
     (test-group "create users"
       (test-equal "/admin?m=user-created"
-        (location (send "POST" "/admin/users" admin "username=bob&password=bobpassword")))
+                  (location (send "POST" "/admin/users" admin
+                                  "username=bob&password=bobpassword")))
       (test-equal "/admin?m=dup-user"
-        (location (send "POST" "/admin/users" admin "username=bob&password=bobpassword")))
+                  (location (send "POST" "/admin/users" admin
+                                  "username=bob&password=bobpassword")))
       (test-equal "/admin?m=bad-username"
-        (location (send "POST" "/admin/users" admin "username=b+b&password=bobpassword")))
+                  (location (send "POST" "/admin/users" admin
+                                  "username=b+b&password=bobpassword")))
       (test-equal "/admin?m=short-password"
-        (location (send "POST" "/admin/users" admin "username=eve&password=short")))
+                  (location (send "POST" "/admin/users" admin
+                                  "username=eve&password=short")))
       (test-equal "/admin?m=user-created"
-        (location (send "POST" "/admin/users" admin "username=ann&password=annpassword&admin=1")))
+                  (location (send "POST" "/admin/users" admin
+                                  "username=ann&password=annpassword&admin=1")))
       (test-equal '("admin") (user-role-names db (user-id "ann")))
       (test-equal '() (user-role-names db (user-id "bob")))
-      (test-assert (has? (body (send "GET" "/admin?m=user-created" admin)) "Benutzer erstellt.")))
+      (test-assert (has? (body (send "GET" "/admin?m=user-created" admin))
+                         "Benutzer erstellt.")))
 
     (test-group "a failed transaction leaves nothing behind"
-      (test-error
-       (with-db-transaction db
-         (lambda (tx)
-           (create-user! tx "ghost" "x")
-           (error "boom"))))
+      (test-error (with-db-transaction db
+                    (lambda (tx)
+                      (create-user! tx "ghost" "x")
+                      (error "boom"))))
       (test-equal #f (find-user-by-name db "ghost")))
 
     (test-group "non-admins are kept out"
       (let ((bob (sign-in "bob" "bobpassword")))
         (test-equal 200 (http-response-status (send "GET" "/" bob)))
         (test-equal 403 (http-response-status (send "GET" "/admin" bob)))
-        (test-equal 403 (http-response-status
-                         (send "POST" "/admin/roles" bob "name=hackers")))
+        (test-equal 403
+                    (http-response-status
+                     (send "POST" "/admin/roles" bob "name=hackers")))
         (test-assert (not (has? (body (send "GET" "/" bob)) "/admin\"")))))
 
     (test-group "roles"
       (test-equal "/admin?m=role-created"
-        (location (send "POST" "/admin/roles" admin "name=editor")))
+                  (location (send "POST" "/admin/roles" admin "name=editor")))
       (test-equal "/admin?m=bad-role"
-        (location (send "POST" "/admin/roles" admin "name=a+b")))
-      (let ((rid (let ((r (assoc "editor" (map (lambda (r) (cons (col r "name") (col r "id")))
-                                               (list-roles db)))))
-                   (if (number? (cdr r)) (number->string (cdr r)) (cdr r)))))
-        (send "POST" (string-append "/admin/users/" (user-id "bob") "/roles") admin
+                  (location (send "POST" "/admin/roles" admin "name=a+b")))
+      (let
+          ((rid (let
+                    ((r (assoc "editor"
+                               (map (lambda (r)
+                                      (cons (col r "name") (col r "id")))
+                                    (list-roles db)))))
+                  (if (number? (cdr r)) (number->string (cdr r)) (cdr r)))))
+        (send "POST"
+              (string-append "/admin/users/" (user-id "bob") "/roles")
+              admin
               (string-append "role_id=" rid))
         (test-equal '("editor") (user-role-names db (user-id "bob")))
-        (send "POST" (string-append "/admin/users/" (user-id "bob") "/roles/" rid "/delete") admin)
+        (send "POST"
+              (string-append "/admin/users/"
+                             (user-id "bob")
+                             "/roles/"
+                             rid
+                             "/delete")
+              admin)
         (test-equal '() (user-role-names db (user-id "bob")))))
 
     (test-group "an admin cannot lock themselves out"
-      (let ((admin-rid (let ((id (db-scalar db "SELECT id FROM roles WHERE name = $1" admin-role)))
-                         (if (number? id) (number->string id) id))))
+      (let
+          ((admin-rid (let
+                          ((id (db-scalar db
+                                          "SELECT id FROM roles WHERE name = $1"
+                                          admin-role)))
+                        (if (number? id) (number->string id) id))))
         (test-equal "/admin?m=self-admin"
-          (location (send "POST" (string-append "/admin/users/" (user-id "root")
-                                                "/roles/" admin-rid "/delete")
-                          admin)))
+                    (location (send "POST"
+                                    (string-append "/admin/users/"
+                                                   (user-id "root")
+                                                   "/roles/"
+                                                   admin-rid
+                                                   "/delete")
+                                    admin)))
         (test-equal "/admin?m=self-delete"
-          (location (send "POST" (string-append "/admin/users/" (user-id "root") "/delete")
-                          admin)))))
+                    (location (send "POST"
+                                    (string-append "/admin/users/"
+                                                   (user-id "root")
+                                                   "/delete")
+                                    admin)))))
 
     (test-group "sessions end with the user or the password"
       (let ((bob (sign-in "bob" "bobpassword"))
             (bob2 (sign-in "bob" "bobpassword")))
-        (let ((fresh (cookie-of (send "POST" "/profile/password" bob
-                                      "current=bobpassword&new=bobsnewpass&confirm=bobsnewpass"))))
+        (let
+            ((fresh (cookie-of (send "POST" "/profile/password" bob
+                                     "current=bobpassword&new=bobsnewpass&confirm=bobsnewpass"))))
           (test-assert fresh)
           (test-equal "/login" (location (send "GET" "/" bob2)))
           (test-equal 200 (http-response-status (send "GET" "/" fresh)))
-          (send "POST" (string-append "/admin/users/" (user-id "bob") "/delete") admin)
+          (send "POST"
+                (string-append "/admin/users/" (user-id "bob") "/delete")
+                admin)
           (test-equal #f (find-user-by-name db "bob"))
           (test-equal "/login" (location (send "GET" "/" fresh))))))
 
     (test-group "decks and the JSON API"
-      (send "POST" "/admin/users" admin "username=carol&password=carolpassword")
+      (send "POST" "/admin/users" admin
+            "username=carol&password=carolpassword")
       (send "POST" "/admin/users" admin "username=dave&password=davepassword")
       (let* ((carol (sign-in "carol" "carolpassword"))
              (dave (sign-in "dave" "davepassword"))
-             (created (send "POST" "/decks" carol "title=Jahresbericht&design=zh"))
+             (created (send "POST" "/decks" carol
+                            "title=Jahresbericht&design=zh"))
              (id (deck-id-of created))
              (api (string-append "/api/decks/" id)))
         (test-equal 303 (status created))
@@ -208,14 +265,25 @@
         ;; action, the others in a menu.
         (let ((list-page (body (send "GET" "/" carol))))
           (test-assert (has? list-page "class=\"deck-grid\""))
-          (test-assert "the first slide for the picture" (has? list-page "data-slide=\"{"))
-          (test-assert (has? list-page (string-append "href=\"/decks/" id "/edit\"")))
+          (test-assert "the first slide for the picture"
+                       (has? list-page "data-slide=\"{"))
+          (test-assert (has? list-page
+                             (string-append "href=\"/decks/" id "/edit\"")))
           (test-assert (has? list-page "<details class=\"menu\">"))
-          (test-assert (has? list-page (string-append "action=\"/decks/" id "/archive\"")))
+          (test-assert (has? list-page
+                             (string-append "action=\"/decks/" id
+                                            "/archive\"")))
           (test-assert (has? list-page "js/decks.js")))
-        (test-assert (has? (body (send "GET" (string-append "/decks/" id) carol)) "Kanton Zürich"))
-        (test-equal "/?m=bad-title" (location (send "POST" "/decks" carol "title=&design=zh")))
-        (test-equal "/?m=bad-design" (location (send "POST" "/decks" carol "title=x&design=nope")))
+        (test-assert (has? (body (send "GET"
+                                       (string-append "/decks/" id)
+                                       carol))
+                           "Kanton Zürich"))
+        (test-equal "/?m=bad-title"
+                    (location (send "POST" "/decks" carol
+                                    "title=&design=zh")))
+        (test-equal "/?m=bad-design"
+                    (location (send "POST" "/decks" carol
+                                    "title=x&design=nope")))
 
         (let* ((deck (json-body (send "GET" api carol)))
                (doc (jref deck "doc")))
@@ -225,40 +293,67 @@
 
           ;; Another user cannot see or change it.
           (test-equal 404 (status (send "GET" api dave)))
-          (test-equal 404 (status (send-json "PUT" api dave
-                                             `(("revision" . 1) ("doc" . ,doc)))))
-          (test-equal 404 (status (send "GET" (string-append "/decks/" id) dave)))
+          (test-equal 404
+                      (status (send-json "PUT" api dave
+                                         `(("revision" . 1) ("doc" . ,doc)))))
+          (test-equal 404
+                      (status (send "GET" (string-append "/decks/" id) dave)))
 
           ;; The remote's QR code: the remote's address as SVG, for the
           ;; deck's users only and only with a plain origin.
           (let* ((qr (lambda (origin who)
-                       (send "GET" (string-append "/decks/" id "/remote-qr.svg?origin=" origin) who)))
+                       (send "GET"
+                             (string-append "/decks/" id
+                                            "/remote-qr.svg?origin=" origin)
+                             who)))
                  (r (qr "https%3A%2F%2Ffolien.example.org" carol)))
             (test-assert "the deck page offers it"
-              (has? (body (send "GET" (string-append "/decks/" id) carol))
-                    (string-append "class=\"button small js-remote-qr\" href=\"/decks/" id "/remote\"")))
+                         (has? (body (send "GET"
+                                           (string-append "/decks/" id)
+                                           carol))
+                               (string-append
+                                "class=\"button small js-remote-qr\" href=\"/decks/"
+                                id "/remote\"")))
             ;; the overview: what it is, the main actions, the rest in a
             ;; menu; no link to itself, export only in its section
-            (let* ((page (body (send "GET" (string-append "/decks/" id) carol)))
-                   (row-start (string-contains-from page "overview-actions" 0))
+            (let* ((page (body (send "GET"
+                                     (string-append "/decks/" id)
+                                     carol)))
+                   (row-start (string-contains-from page "overview-actions"
+                                                    0))
                    (row-end (string-contains-from page "id=\"viewer\"" 0))
                    (row (substring page row-start row-end)))
               (test-assert (has? page "<p class=\"eyebrow\">Übersicht</p>"))
               (test-assert "Bearbeiten first, as the main action"
-                (has? row (string-append "primary-link\" href=\"/decks/" id "/edit\">Bearbeiten")))
-              (test-assert (has? row (string-append "href=\"/decks/" id "/present\">Präsentieren")))
+                           (has? row
+                                 (string-append
+                                  "primary-link\" href=\"/decks/" id
+                                  "/edit\">Bearbeiten")))
+              (test-assert (has? row
+                                 (string-append "href=\"/decks/" id
+                                                "/present\">Präsentieren")))
               (test-assert (has? row "<details class=\"menu\">"))
               (test-assert (has? row "Archivieren"))
-              (test-assert "no link to itself" (not (has? row (string-append "href=\"/decks/" id "\""))))
-              (test-assert "ZIP only in the export section" (not (has? row "export.zip")))
+              (test-assert "no link to itself"
+                           (not (has? row
+                                      (string-append "href=\"/decks/" id
+                                                     "\""))))
+              (test-assert "ZIP only in the export section"
+                           (not (has? row "export.zip")))
               (test-assert (has? page "export.zip")))
             (test-equal 200 (status r))
-            (test-equal "image/svg+xml" (http-response-header r "Content-Type"))
+            (test-equal "image/svg+xml"
+                        (http-response-header r "Content-Type"))
             (test-assert (has? (body r) "<svg"))
-            (test-equal 200 (status (qr "http%3A%2F%2F192.168.1.20%3A8090" carol)))
-            (test-equal 404 (status (qr "https%3A%2F%2Ffolien.example.org" dave)))
-            (for-each (lambda (bad) (test-equal bad 400 (status (qr bad carol))))
-                      '("" "ftp%3A%2F%2Fx" "https%3A%2F%2Fx%2Fpath" "https%3A%2F%2Fuser%40x" "javascript%3Aalert(1)")))
+            (test-equal 200
+                        (status (qr "http%3A%2F%2F192.168.1.20%3A8090"
+                                    carol)))
+            (test-equal 404
+                        (status (qr "https%3A%2F%2Ffolien.example.org" dave)))
+            (for-each (lambda (bad)
+                        (test-equal bad 400 (status (qr bad carol))))
+                      '("" "ftp%3A%2F%2Fx" "https%3A%2F%2Fx%2Fpath"
+                        "https%3A%2F%2Fuser%40x" "javascript%3Aalert(1)")))
 
           ;; Remote links: the code's token opens the remote without a
           ;; session, for this deck's remote only.
@@ -267,90 +362,192 @@
                  (dave-row (find-user-by-name db "dave"))
                  (now (current-second))
                  (token (lambda (user deck at)
-                          (make-remote-token token-auth user deck (or (deck-remote-epoch db (col carol-row "id") deck) 0) at)))
+                          (make-remote-token
+                           token-auth
+                           user
+                           deck
+                           (or (deck-remote-epoch db
+                                                  (col carol-row "id")
+                                                  deck)
+                               0)
+                           at)))
                  (good (token carol-row id now))
                  (r (send "GET" (string-append remote "?t=" good) #f))
                  (phone (cookie-of r))
-                 (as-phone (lambda (method url . form) (apply send method url phone form))))
-            (test-equal "the token goes into a cookie, out of the address" remote (location r))
+                 (as-phone (lambda (method url . form)
+                             (apply send method url phone form))))
+            (test-equal "the token goes into a cookie, out of the address"
+                        remote
+                        (location r))
             (test-assert (has? phone "folien_remote="))
             ;; Lax: a QR code opens the link from outside the browser
             (test-assert "HttpOnly, SameSite=Lax"
-              (and (has? (http-response-header r "Set-Cookie") "HttpOnly")
-                   (has? (http-response-header r "Set-Cookie") "SameSite=Lax")))
+                         (and (has? (http-response-header r "Set-Cookie")
+                                    "HttpOnly")
+                              (has? (http-response-header r "Set-Cookie")
+                                    "SameSite=Lax")))
             (test-equal 200 (status (as-phone "GET" remote)))
             (test-equal 200 (status (as-phone "GET" api)))
             (test-equal 200 (status (as-phone "GET" "/api/designs")))
-            (test-equal 202 (status (send-json "POST" (string-append api "/events") phone
-                                               '(("type" . "goto") ("pos" . (("slide" . 0) ("step" . 0)))))))
+            (test-equal 202
+                        (status (send-json
+                                 "POST"
+                                 (string-append api "/events")
+                                 phone
+                                 '(("type" . "goto")
+                                   ("pos" . (("slide" . 0) ("step" . 0)))))))
             ;; nothing else
-            (test-equal 401 (status (send-json "PUT" api phone '(("revision" . 1)))))
-            (test-assert (has? (location (as-phone "GET" (string-append "/decks/" id "/edit"))) "/login"))
+            (test-equal 401
+                        (status (send-json "PUT" api phone
+                                           '(("revision" . 1)))))
+            (test-assert (has? (location
+                                (as-phone
+                                 "GET"
+                                 (string-append "/decks/" id "/edit")))
+                               "/login"))
             (test-equal "/login" (location (as-phone "GET" "/")))
-            (test-equal 401 (status (as-phone "GET" (string-append api "/assets"))))
-            (test-equal 401 (status (as-phone "POST" (string-append api "/remote-links/renew"))))
+            (test-equal 401
+                        (status (as-phone "GET"
+                                          (string-append api "/assets"))))
+            (test-equal 401
+                        (status (as-phone
+                                 "POST"
+                                 (string-append api "/remote-links/renew"))))
             ;; not valid: expired, forged, for another deck, made by
             ;; someone without access
-            (for-each
-             (lambda (case)
-               (test-equal (car case) 403 (status (send "GET" (string-append remote "?t=" (cdr case)) #f))))
-             `(("expired" . ,(token carol-row id (- now (* 13 3600))))
-               ("forged" . ,(string-append (substring good 0 (- (string-length good) 4)) "beef"))
-               ("another deck" . ,(token carol-row "zzzzzzzzzzzz" now))
-               ("no access" . ,(token dave-row id now))
-               ("garbage" . "1.2.3")))
+            (for-each (lambda (case)
+                        (test-equal (car case)
+                                    403
+                                    (status
+                                     (send
+                                      "GET"
+                                      (string-append remote "?t=" (cdr case))
+                                      #f))))
+                      `(("expired"
+                         .
+                         ,(token carol-row id (- now (* 13 3600))))
+                        ("forged"
+                         .
+                         ,(string-append
+                           (substring good 0 (- (string-length good) 4))
+                           "beef"))
+                        ("another deck"
+                         .
+                         ,(token carol-row "zzzzzzzzzzzz" now))
+                        ("no access" . ,(token dave-row id now))
+                        ("garbage" . "1.2.3")))
             (test-assert "the expired page offers signing in"
-              (has? (body (send "GET" (string-append remote "?t=" (token carol-row id (- now (* 13 3600)))) #f))
-                    "/login?next="))
+                         (has? (body (send
+                                      "GET"
+                                      (string-append
+                                       remote
+                                       "?t="
+                                       (token carol-row id
+                                              (- now (* 13 3600))))
+                                      #f))
+                               "/login?next="))
             ;; a new code ends the old ones
-            (test-equal 204 (status (send "POST" (string-append api "/remote-links/renew") carol)))
+            (test-equal 204
+                        (status (send "POST"
+                                      (string-append api
+                                                     "/remote-links/renew")
+                                      carol)))
             (test-equal 401 (status (as-phone "GET" api)))
-            (test-equal 403 (status (send "GET" (string-append remote "?t=" good) #f)))
-            (test-equal 303 (status (send "GET" (string-append remote "?t=" (token carol-row id now)) #f))))
+            (test-equal 403
+                        (status (send "GET"
+                                      (string-append remote "?t=" good)
+                                      #f)))
+            (test-equal 303
+                        (status (send "GET"
+                                      (string-append remote "?t="
+                                                     (token carol-row id now))
+                                      #f))))
 
           ;; Signing in on a phone that scanned it: back to the remote.
           (let ((remote (string-append "/decks/" id "/remote")))
-            (test-equal (string-append "/login?next=" (string-append "%2Fdecks%2F" id "%2Fremote"))
+            (test-equal (string-append "/login?next="
+                                       (string-append "%2Fdecks%2F" id
+                                                      "%2Fremote"))
                         (location (send "GET" remote #f)))
             (test-equal remote
+                        (location (send
+                                   "POST"
+                                   "/login"
+                                   #f
+                                   (string-append
+                                    "username=carol&password=carolpassword&next="
+                                    "%2Fdecks%2F" id "%2Fremote"))))
+            (test-equal "/"
                         (location (send "POST" "/login" #f
-                                        (string-append "username=carol&password=carolpassword&next="
-                                                       "%2Fdecks%2F" id "%2Fremote"))))
-            (test-equal "/" (location (send "POST" "/login" #f
-                                            "username=carol&password=carolpassword&next=%2F%2Fevil.example"))))
+                                        "username=carol&password=carolpassword&next=%2F%2Fevil.example"))))
 
           ;; Save, then a stale save conflicts.
           (let* ((two-slides `(("format" . 1)
-                               ("slides" . ,(vector (vector-ref (doc-slides doc) 0)
-                                                    (new-slide "zh" "title-content")))))
-                 (r (send-json "PUT" api carol `(("revision" . 1) ("doc" . ,two-slides)))))
+                               ("slides"
+                                .
+                                ,(vector (vector-ref (doc-slides doc) 0)
+                                         (new-slide "zh" "title-content")))))
+                 (r (send-json "PUT" api carol
+                               `(("revision" . 1) ("doc" . ,two-slides)))))
             (test-equal 200 (status r))
             (test-equal 2 (jref (json-body r) "revision"))
-            (let ((stale (send-json "PUT" api carol `(("revision" . 1) ("doc" . ,doc)))))
+            (let
+                ((stale (send-json "PUT" api carol
+                                   `(("revision" . 1) ("doc" . ,doc)))))
               (test-equal 409 (status stale))
               (test-equal 2 (jref (json-body stale) "revision")))
-            (test-equal 2 (vector-length (doc-slides (jref (json-body (send "GET" api carol)) "doc")))))
+            (test-equal 2
+                        (vector-length (doc-slides
+                                        (jref
+                                         (json-body (send "GET" api carol))
+                                         "doc")))))
 
           ;; Switching the design goes through the same save.
-          (test-equal 200 (status (send-json "PUT" api carol
-                                             `(("revision" . 2) ("design" . "folien") ("doc" . ,doc)))))
-          (test-equal "folien" (jref (json-body (send "GET" api carol)) "design"))
+          (test-equal 200
+                      (status (send-json
+                               "PUT"
+                               api
+                               carol
+                               `(("revision" . 2)
+                                 ("design" . "folien")
+                                 ("doc" . ,doc)))))
+          (test-equal "folien"
+                      (jref (json-body (send "GET" api carol)) "design"))
 
           ;; The editor page, and a title saved with the document.
           (let ((r (send "GET" (string-append "/decks/" id "/edit") carol)))
             (test-equal 200 (status r))
             (test-assert (has? (body r) "id=\"editor\""))
             (test-assert (has? (body r) "js/editor.js")))
-          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/edit") dave)))
-          (let ((r (send-json "PUT" api carol `(("revision" . 3) ("title" . "Neu") ("doc" . ,doc)))))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append "/decks/" id "/edit")
+                                    dave)))
+          (let
+              ((r (send-json "PUT" api carol
+                             `(("revision" . 3)
+                               ("title" . "Neu")
+                               ("doc" . ,doc)))))
             (test-equal 200 (status r))
             (test-equal 4 (jref (json-body r) "revision"))
-            (test-equal "Neu" (jref (json-body (send "GET" api carol)) "title")))
-          (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("title" . "") ("doc" . ,doc)))))
+            (test-equal "Neu"
+                        (jref (json-body (send "GET" api carol)) "title")))
+          (test-equal 400
+                      (status (send-json
+                               "PUT"
+                               api
+                               carol
+                               `(("revision" . 4)
+                                 ("title" . "")
+                                 ("doc" . ,doc)))))
 
           ;; Assets: upload, list, fetch (with ranges), use in the document.
           (let* ((png (real-png 1))
-                 (up (send-bytes "POST" (string-append api "/assets?name=a%2Fb.png&w=10&h=20") carol png))
+                 (up (send-bytes "POST"
+                                 (string-append api
+                                                "/assets?name=a%2Fb.png&w=10&h=20")
+                                 carol
+                                 png))
                  (asset (json-body up))
                  (sha (jref asset "sha"))
                  (asset-url (string-append api "/assets/" sha)))
@@ -362,95 +559,255 @@
             (test-equal 2 (jref asset "height"))
             (test-equal 64 (string-length sha))
             ;; the same file again: one asset
-            (send-bytes "POST" (string-append api "/assets?name=again.png") carol png)
-            (test-equal 1 (vector-length (json-body (send "GET" (string-append api "/assets") carol))))
+            (send-bytes "POST"
+                        (string-append api "/assets?name=again.png")
+                        carol
+                        png)
+            (test-equal 1
+                        (vector-length (json-body
+                                        (send "GET"
+                                              (string-append api "/assets")
+                                              carol))))
             (let ((r (send "GET" asset-url carol)))
               (test-equal 200 (status r))
               (test-equal "image/png" (http-response-header r "Content-Type"))
-              (test-assert (has? (http-response-header r "Content-Security-Policy") "sandbox"))
-              (test-assert (has? (http-response-header r "Cache-Control") "immutable"))
+              (test-assert (has? (http-response-header r
+                                                       "Content-Security-Policy")
+                                 "sandbox"))
+              (test-assert (has? (http-response-header r "Cache-Control")
+                                 "immutable"))
               (test-equal png (http-response-body r)))
-            (let ((r (parameterize ((log-port (open-output-string)))
-                       (app (make-http-request "GET" asset-url
-                                               (list (cons "Cookie" carol) '("Range" . "bytes=0-3"))
-                                               #f)))))
+            (let
+                ((r (parameterize ((log-port (open-output-string)))
+                      (app (make-http-request
+                            "GET"
+                            asset-url
+                            (list (cons "Cookie" carol)
+                                  '("Range" . "bytes=0-3"))
+                            #f)))))
               (test-equal 206 (status r))
-              (test-equal (bytevector #x89 #x50 #x4E #x47) (http-response-body r)))
+              (test-equal (bytevector #x89 #x50 #x4E #x47)
+                          (http-response-body r)))
             ;; Not for other users, not for unknown hashes.
             (test-equal 404 (status (send "GET" asset-url dave)))
-            (test-equal 404 (status (send "GET" (string-append api "/assets/" (make-string 64 #\0)) carol)))
-            (test-equal 404 (status (send-bytes "POST" (string-append api "/assets") dave png)))
-            (test-equal 415 (status (send-bytes "POST" (string-append api "/assets") carol
-                                                (string->utf8 "#!/bin/sh"))))
-            (test-equal 400 (status (send-bytes "POST" (string-append api "/assets") carol (bytevector))))
+            (test-equal 404
+                        (status (send "GET"
+                                      (string-append api "/assets/"
+                                                     (make-string 64 #\0))
+                                      carol)))
+            (test-equal 404
+                        (status (send-bytes "POST"
+                                            (string-append api "/assets")
+                                            dave
+                                            png)))
+            (test-equal 415
+                        (status (send-bytes "POST"
+                                            (string-append api "/assets")
+                                            carol
+                                            (string->utf8 "#!/bin/sh"))))
+            (test-equal 400
+                        (status (send-bytes "POST"
+                                            (string-append api "/assets")
+                                            carol
+                                            (bytevector))))
             ;; Images must decode.
-            (test-equal 422 (status (send-bytes "POST" (string-append api "/assets") carol
-                                                (bytevector-copy (real-png 9) 0 40))))
+            (test-equal 422
+                        (status (send-bytes
+                                 "POST"
+                                 (string-append api "/assets")
+                                 carol
+                                 (bytevector-copy (real-png 9) 0 40))))
             ;; A thumbnail copy: smaller, upright, cached; other widths get the file.
-            (let* ((big (image->png (make-image 900 600 (make-bytevector (* 900 600 4) 77))))
-                   (big-sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=big.png") carol big)) "sha"))
-                   (thumb (send "GET" (string-append api "/assets/" big-sha "?w=320") carol)))
+            (let* ((big (image->png (make-image
+                                     900
+                                     600
+                                     (make-bytevector (* 900 600 4) 77))))
+                   (big-sha (jref (json-body
+                                   (send-bytes
+                                    "POST"
+                                    (string-append api "/assets?name=big.png")
+                                    carol
+                                    big))
+                                  "sha"))
+                   (thumb (send "GET"
+                                (string-append api "/assets/" big-sha
+                                               "?w=320")
+                                carol)))
               (test-equal 200 (status thumb))
-              (test-equal "image/png" (http-response-header thumb "Content-Type"))
+              (test-equal "image/png"
+                          (http-response-header thumb "Content-Type"))
               (let ((b (http-response-body thumb)))
-                (test-equal "320 wide" 320 (+ (* 256 (bytevector-u8-ref b 18)) (bytevector-u8-ref b 19))))
+                (test-equal "320 wide" 320
+                            (+ (* 256 (bytevector-u8-ref b 18))
+                               (bytevector-u8-ref b 19))))
               (test-equal "an unknown width: the file" big
-                (http-response-body (send "GET" (string-append api "/assets/" big-sha "?w=333") carol))))
+                          (http-response-body
+                           (send "GET"
+                                 (string-append api "/assets/" big-sha
+                                                "?w=333")
+                                 carol))))
             ;; An SVG is recognised as such.
             (test-equal "image/svg+xml"
-              (jref (json-body (send-bytes "POST" (string-append api "/assets?name=x.svg") carol
-                                           (string->utf8 "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>")))
-                    "mime"))
+                        (jref (json-body
+                               (send-bytes
+                                "POST"
+                                (string-append api "/assets?name=x.svg")
+                                carol
+                                (string->utf8
+                                 "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>")))
+                              "mime"))
             ;; The document may use it; a bad reference is refused.
             (let* ((slide (vector-ref (doc-slides doc) 0))
-                   (img `(("id" . "img1") ("type" . "image") ("x" . 0) ("y" . 0) ("w" . 100) ("h" . 100)
+                   (img `(("id" . "img1")
+                          ("type" . "image")
+                          ("x" . 0)
+                          ("y" . 0)
+                          ("w" . 100)
+                          ("h" . 100)
                           ("asset" . ,sha)))
                    (with-img (lambda (a)
                                `(("format" . 1)
-                                 ("slides" . ,(vector
-                                               (map (lambda (p)
-                                                      (if (equal? (car p) "elements")
-                                                          (cons "elements" (vector (map (lambda (q) (if (equal? (car q) "asset") (cons "asset" a) q)) img)))
-                                                          p))
-                                                    slide)))))))
-              (test-equal 400 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,(with-img "../../etc/passwd"))))))
-              (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 4) ("doc" . ,(with-img sha))))))
-              (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 5) ("doc" . ,doc))))))
-            (test-assert (file-exists? (string-append data-dir "/assets/" (substring sha 0 2) "/" sha))))
+                                 ("slides"
+                                  .
+                                  ,(vector
+                                    (map
+                                     (lambda (p)
+                                       (if
+                                        (equal? (car p) "elements")
+                                        (cons
+                                         "elements"
+                                         (vector
+                                          (map
+                                           (lambda (q)
+                                             (if (equal? (car q) "asset")
+                                                 (cons "asset" a)
+                                                 q))
+                                           img)))
+                                        p))
+                                     slide)))))))
+              (test-equal 400
+                          (status (send-json
+                                   "PUT"
+                                   api
+                                   carol
+                                   `(("revision" . 4)
+                                     ("doc"
+                                      .
+                                      ,(with-img "../../etc/passwd"))))))
+              (test-equal 200
+                          (status (send-json
+                                   "PUT"
+                                   api
+                                   carol
+                                   `(("revision" . 4)
+                                     ("doc" . ,(with-img sha))))))
+              (test-equal 200
+                          (status (send-json
+                                   "PUT"
+                                   api
+                                   carol
+                                   `(("revision" . 5) ("doc" . ,doc))))))
+            (test-assert (file-exists? (string-append data-dir "/assets/"
+                                                      (substring sha 0 2)
+                                                      "/"
+                                                      sha))))
 
-;; PDF export.
-          (let ((r (send "GET" (string-append "/decks/" id "/export.pdf?per-page=2&notes=1") carol)))
+          ;; PDF export.
+          (let
+              ((r (send "GET"
+                        (string-append "/decks/" id
+                                       "/export.pdf?per-page=2&notes=1")
+                        carol)))
             (test-equal 200 (status r))
-            (test-equal "application/pdf" (http-response-header r "Content-Type"))
-            (test-assert (has? (http-response-header r "Content-Disposition") "(Notizen) (2 pro Seite).pdf"))
-            (test-equal "%PDF" (utf8->string (bytevector-copy (http-response-body r) 0 4))))
-          (test-equal 400 (status (send "GET" (string-append "/decks/" id "/export.pdf?per-page=3") carol)))
-          (let ((r (send "GET" (string-append "/decks/" id "/export.pptx") carol)))
+            (test-equal "application/pdf"
+                        (http-response-header r "Content-Type"))
+            (test-assert (has? (http-response-header r "Content-Disposition")
+                               "(Notizen) (2 pro Seite).pdf"))
+            (test-equal "%PDF"
+                        (utf8->string (bytevector-copy (http-response-body r)
+                                                       0
+                                                       4))))
+          (test-equal 400
+                      (status (send "GET"
+                                    (string-append "/decks/" id
+                                                   "/export.pdf?per-page=3")
+                                    carol)))
+          (let
+              ((r (send "GET"
+                        (string-append "/decks/" id "/export.pptx")
+                        carol)))
             (test-equal 200 (status r))
-            (test-assert (has? (http-response-header r "Content-Type") "presentationml"))
-            (test-equal "PK" (utf8->string (bytevector-copy (http-response-body r) 0 2))))
-          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/export.pptx") dave)))
-          (test-equal 404 (status (send "GET" (string-append "/decks/" id "/export.pdf") dave)))
-          (test-assert (has? (body (send "GET" (string-append "/decks/" id) carol)) "export.pdf"))
+            (test-assert (has? (http-response-header r "Content-Type")
+                               "presentationml"))
+            (test-equal "PK"
+                        (utf8->string (bytevector-copy (http-response-body r)
+                                                       0
+                                                       2))))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append "/decks/" id
+                                                   "/export.pptx")
+                                    dave)))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append "/decks/" id "/export.pdf")
+                                    dave)))
+          (test-assert (has? (body (send "GET"
+                                         (string-append "/decks/" id)
+                                         carol))
+                             "export.pdf"))
 
           ;; Presenting: the pages, and messages through the event stream.
-          (for-each
-           (lambda (page)
-             (let ((r (send "GET" (string-append "/decks/" id "/" page) carol)))
-               (test-equal page 200 (status r))
-               (test-assert page (has? (body r) (string-append "js/" page ".js")))
-               (test-assert page (has? (body r) "data-events-url")))
-             (test-equal 404 (status (send "GET" (string-append "/decks/" id "/" page) dave))))
-           '("present" "presenter" "remote"))
+          (for-each (lambda (page)
+                      (let
+                          ((r (send "GET"
+                                    (string-append "/decks/" id "/" page)
+                                    carol)))
+                        (test-equal page 200 (status r))
+                        (test-assert page
+                                     (has? (body r)
+                                           (string-append "js/" page ".js")))
+                        (test-assert page (has? (body r) "data-events-url")))
+                      (test-equal 404
+                                  (status
+                                   (send "GET"
+                                         (string-append "/decks/" id "/" page)
+                                         dave))))
+                    '("present" "presenter" "remote"))
           (let ((events (string-append api "/events")))
-            (test-equal 202 (status (send-json "POST" events carol
-                                               '(("type" . "goto") ("pos" . (("slide" . 1) ("step" . 0)))))))
-            (test-equal 0 (jref (json-body (send-json "POST" events carol '(("type" . "hello")))) "listeners"))
-            (test-equal 400 (status (send-json "POST" events carol '(("type" . "eval")))))
-            (test-equal 400 (status (send-json "POST" events carol
-                                               '(("type" . "goto") ("pos" . (("slide" . "x") ("step" . 0)))))))
-            (test-equal 400 (status (send-json "POST" events carol '(("type" . "blank") ("blank" . "red")))))
-            (test-equal 404 (status (send-json "POST" events dave '(("type" . "hello")))))
+            (test-equal 202
+                        (status (send-json
+                                 "POST"
+                                 events
+                                 carol
+                                 '(("type" . "goto")
+                                   ("pos" . (("slide" . 1) ("step" . 0)))))))
+            (test-equal 0
+                        (jref (json-body
+                               (send-json "POST" events carol
+                                          '(("type" . "hello"))))
+                              "listeners"))
+            (test-equal 400
+                        (status (send-json "POST" events carol
+                                           '(("type" . "eval")))))
+            (test-equal 400
+                        (status (send-json
+                                 "POST"
+                                 events
+                                 carol
+                                 '(("type" . "goto")
+                                   ("pos"
+                                    .
+                                    (("slide" . "x") ("step" . 0)))))))
+            (test-equal 400
+                        (status (send-json
+                                 "POST"
+                                 events
+                                 carol
+                                 '(("type" . "blank") ("blank" . "red")))))
+            (test-equal 404
+                        (status (send-json "POST" events dave
+                                           '(("type" . "hello")))))
             (test-equal 404 (status (send "GET" events dave)))
             ;; A real server: a listener gets what another client posts.
             (let ((server (tcp-http-serve 18190 app 0 "127.0.0.1" 0 0 500)))
@@ -463,82 +820,155 @@
                          (in (socket-binary-input-port s))
                          ;; Byte by byte: read-bytevector would wait for a
                          ;; full buffer, and an event stream does not end.
-                         (read-until
-                          (lambda (part)
-                            (let loop ((acc '()))
-                              (let ((text (utf8->string (apply bytevector (reverse acc)))))
-                                (if (string-contains-from text part 0)
-                                    text
-                                    (let ((b (read-u8 in)))
-                                      (if (eof-object? b) text (loop (cons b acc))))))))))
-                    (write-bytevector
-                     (string->utf8 (string-append "GET " events " HTTP/1.1\r\nHost: x\r\nCookie: " carol "\r\n\r\n"))
-                     out)
+                         (read-until (lambda (part)
+                                       (let loop ((acc '()))
+                                         (let
+                                             ((text
+                                               (utf8->string
+                                                (apply bytevector
+                                                       (reverse acc)))))
+                                           (if
+                                            (string-contains-from text part 0)
+                                            text
+                                            (let ((b (read-u8 in)))
+                                              (if (eof-object? b)
+                                                  text
+                                                  (loop (cons b acc))))))))))
+                    (write-bytevector (string->utf8
+                                       (string-append "GET " events
+                                                      " HTTP/1.1\r\nHost: x\r\nCookie: "
+                                                      carol "\r\n\r\n"))
+                                      out)
                     (flush-output-port out)
                     (let ((head (read-until "retry: 2000")))
                       (test-assert (has? head "200 OK"))
                       (test-assert (has? head "text/event-stream")))
-                    (test-equal 1 (jref (json-body (send-json "POST" events carol
-                                                              '(("type" . "state") ("pos" . (("slide" . 0) ("step" . 1)))
-                                                                ("blank" . "black") ("from" . "w1"))))
-                                        "listeners"))
+                    (test-equal 1
+                                (jref (json-body
+                                       (send-json
+                                        "POST"
+                                        events
+                                        carol
+                                        '(("type" . "state")
+                                          ("pos"
+                                           .
+                                           (("slide" . 0) ("step" . 1)))
+                                          ("blank" . "black")
+                                          ("from" . "w1"))))
+                                      "listeners"))
                     (test-assert (has? (read-until "\"w1\"}")
                                        "data: {\"type\":\"state\",\"pos\":{\"slide\":0,\"step\":1},\"blank\":\"black\",\"from\":\"w1\"}"))
                     ;; The WebSocket: messages both ways, mixed with the
                     ;; event stream and POSTs.
                     (let* ((socket-url (string-append api "/socket"))
-                           (handshake
-                            (lambda (origin)
-                              (let* ((ws (tcp-connect "127.0.0.1" 18190))
-                                     (wout (socket-binary-output-port ws))
-                                     (win (socket-binary-input-port ws)))
-                                (write-bytevector
-                                 (string->utf8
-                                  (string-append "GET " socket-url " HTTP/1.1\r\nHost: 127.0.0.1:18190\r\n"
-                                                 "Cookie: " carol "\r\nOrigin: " origin "\r\n"
-                                                 "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                                                 "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                                                 "Sec-WebSocket-Version: 13\r\n\r\n"))
-                                 wout)
-                                (flush-output-port wout)
-                                (let loop ((acc '()))
-                                  (let ((b (read-u8 win)))
-                                    (if (or (eof-object? b)
-                                            (and (>= (length acc) 3) (= b 10) (equal? (list (car acc) (cadr acc) (caddr acc)) '(13 10 13))))
-                                        (list ws wout win (utf8->string (apply bytevector (reverse acc))))
-                                        (loop (cons b acc))))))))
+                           (handshake (lambda (origin)
+                                        (let*
+                                            ((ws
+                                              (tcp-connect "127.0.0.1" 18190))
+                                             (wout
+                                              (socket-binary-output-port ws))
+                                             (win
+                                              (socket-binary-input-port ws)))
+                                          (write-bytevector
+                                           (string->utf8
+                                            (string-append "GET " socket-url
+                                                           " HTTP/1.1\r\nHost: 127.0.0.1:18190\r\n"
+                                                           "Cookie: " carol
+                                                           "\r\nOrigin: "
+                                                           origin "\r\n"
+                                                           "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                                                           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                                                           "Sec-WebSocket-Version: 13\r\n\r\n"))
+                                           wout)
+                                          (flush-output-port wout)
+                                          (let loop ((acc '()))
+                                            (let ((b (read-u8 win)))
+                                              (if
+                                               (or
+                                                (eof-object? b)
+                                                (and
+                                                 (>= (length acc) 3)
+                                                 (= b 10)
+                                                 (equal?
+                                                  (list (car acc)
+                                                        (cadr acc)
+                                                        (caddr acc))
+                                                  '(13 10 13))))
+                                               (list
+                                                ws
+                                                wout
+                                                win
+                                                (utf8->string
+                                                 (apply bytevector
+                                                        (reverse acc))))
+                                               (loop (cons b acc))))))))
                            ;; a masked text frame (key 0 0 0 0: masking is a no-op)
-                           (send-frame
-                            (lambda (wout text)
-                              (let ((b (string->utf8 text)))
-                                (write-bytevector (bytevector-append (bytevector #x81 (+ 128 (bytevector-length b)) 0 0 0 0) b) wout)
-                                (flush-output-port wout))))
-                           (read-frame
-                            (lambda (win)
-                              (let* ((b0 (read-u8 win)) (n (modulo (read-u8 win) 128))
-                                     (n (if (= n 126) (+ (* 256 (read-u8 win)) (read-u8 win)) n)))
-                                (cons (modulo b0 16) (utf8->string (read-bytevector n win))))))
+                           (send-frame (lambda (wout text)
+                                         (let ((b (string->utf8 text)))
+                                           (write-bytevector
+                                            (bytevector-append
+                                             (bytevector
+                                              #x81
+                                              (+ 128 (bytevector-length b))
+                                              0
+                                              0
+                                              0
+                                              0)
+                                             b)
+                                            wout)
+                                           (flush-output-port wout))))
+                           (read-frame (lambda (win)
+                                         (let*
+                                             ((b0 (read-u8 win))
+                                              (n (modulo (read-u8 win) 128))
+                                              (n
+                                               (if
+                                                (= n 126)
+                                                (+ (* 256 (read-u8 win))
+                                                   (read-u8 win))
+                                                n)))
+                                           (cons
+                                            (modulo b0 16)
+                                            (utf8->string
+                                             (read-bytevector n win))))))
                            (w (handshake "http://127.0.0.1:18190")))
-                      (test-assert "upgraded" (has? (list-ref w 3) "101 Switching Protocols"))
-                      (send-frame (list-ref w 1) "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"from\":\"w2\"}")
-                      (test-assert "the event stream gets the socket's message"
-                        (has? (read-until "\"w2\"}") "\"type\":\"goto\""))
+                      (test-assert "upgraded"
+                                   (has? (list-ref w 3)
+                                         "101 Switching Protocols"))
+                      (send-frame (list-ref w 1)
+                                  "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"from\":\"w2\"}")
+                      (test-assert
+                       "the event stream gets the socket's message"
+                       (has? (read-until "\"w2\"}") "\"type\":\"goto\""))
                       (test-equal "relayed (to the sender too)"
-                        '(1 . "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"blank\":null,\"from\":\"w2\"}")
-                        (read-frame (list-ref w 2)))
-                      (send-frame (list-ref w 1) "{\"type\":\"eval\"}")      ; dropped
+                                  '(1 .
+                                    "{\"type\":\"goto\",\"pos\":{\"slide\":2,\"step\":0},\"blank\":null,\"from\":\"w2\"}")
+                                  (read-frame (list-ref w 2)))
+                      (send-frame (list-ref w 1) "{\"type\":\"eval\"}") ; dropped
                       (test-equal "a POST reaches the socket" 2
-                        (jref (json-body (send-json "POST" events carol '(("type" . "hello") ("from" . "w3")))) "listeners"))
-                      (test-equal '(1 . "{\"type\":\"hello\",\"blank\":null,\"from\":\"w3\"}") (read-frame (list-ref w 2)))
+                                  (jref
+                                   (json-body
+                                    (send-json
+                                     "POST"
+                                     events
+                                     carol
+                                     '(("type" . "hello") ("from" . "w3"))))
+                                   "listeners"))
+                      (test-equal '(1 .
+                                    "{\"type\":\"hello\",\"blank\":null,\"from\":\"w3\"}")
+                                  (read-frame (list-ref w 2)))
                       (socket-close (car w))
                       (let ((evil (handshake "https://evil.example")))
-                        (test-assert "another site: refused" (has? (list-ref evil 3) "403"))
+                        (test-assert "another site: refused"
+                                     (has? (list-ref evil 3) "403"))
                         (socket-close (car evil))))
                     (socket-close s)))
                 (lambda () (server-stop server)))))
 
           ;; Invalid documents are refused.
-          (let ((r (send-json "PUT" api carol `(("revision" . 6) ("doc" . (("format" . 1)))))))
+          (let
+              ((r (send-json "PUT" api carol
+                             `(("revision" . 6) ("doc" . (("format" . 1)))))))
             (test-equal 400 (status r))
             (test-assert (has? (jref (json-body r) "error") "slides")))
           (test-equal 400 (status (send "PUT" api carol "not json")))
@@ -548,60 +978,105 @@
           (test-assert (not (has? (body (send "GET" "/" carol)) ">Neu<")))
           (test-assert (has? (body (send "GET" "/archive" carol)) ">Neu<"))
           (test-equal (string-append "/decks/" id)
-                      (location (send "GET" (string-append "/decks/" id "/edit") carol)))
-          (test-equal 403 (status (send-json "PUT" api carol `(("revision" . 6) ("doc" . ,doc)))))
-          (test-equal 403 (status (send-bytes "POST" (string-append api "/assets") carol (bytevector #xFF #xD8 #xFF 0))))
+                      (location (send "GET"
+                                      (string-append "/decks/" id "/edit")
+                                      carol)))
+          (test-equal 403
+                      (status (send-json "PUT" api carol
+                                         `(("revision" . 6) ("doc" . ,doc)))))
+          (test-equal 403
+                      (status (send-bytes "POST"
+                                          (string-append api "/assets")
+                                          carol
+                                          (bytevector #xFF #xD8 #xFF 0))))
           (send "POST" (string-append "/decks/" id "/restore") carol)
-          (test-equal 200 (status (send-json "PUT" api carol `(("revision" . 6) ("doc" . ,doc)))))
+          (test-equal 200
+                      (status (send-json "PUT" api carol
+                                         `(("revision" . 6) ("doc" . ,doc)))))
 
           ;; Duplicate and rename.
           (send "POST" (string-append "/decks/" id "/duplicate") carol)
           ;; the copy has the assets too
           (let ((copy-id (col (car (filter-decks db "Neu (Kopie)")) "id")))
-            (test-equal 3 (vector-length (json-body (send "GET" (string-append "/api/decks/" copy-id "/assets") carol)))))
+            (test-equal 3
+                        (vector-length (json-body
+                                        (send
+                                         "GET"
+                                         (string-append "/api/decks/" copy-id
+                                                        "/assets")
+                                         carol)))))
           (test-assert (has? (body (send "GET" "/" carol)) "Neu (Kopie)"))
-          (send "POST" (string-append "/decks/" id "/rename") carol "title=Bericht+2026")
+          (send "POST"
+                (string-append "/decks/" id "/rename")
+                carol
+                "title=Bericht+2026")
           (test-assert (has? (body (send "GET" "/" carol)) "Bericht 2026"))
 
           ;; Delete only works from the trash.
           (send "POST" (string-append "/decks/" id "/delete") carol)
           (test-equal 200 (status (send "GET" api carol)))
           (send "POST" (string-append "/decks/" id "/trash") carol)
-          (test-assert (has? (body (send "GET" "/trash" carol)) "Bericht 2026"))
+          (test-assert (has? (body (send "GET" "/trash" carol))
+                             "Bericht 2026"))
           (send "POST" (string-append "/decks/" id "/delete") carol)
           (test-equal 404 (status (send "GET" api carol))))))
 
     (test-group "bundles: export, import, refusals"
       (send "POST" "/admin/users" admin "username=erin&password=erinpassword")
       (let* ((erin (sign-in "erin" "erinpassword"))
-             (id (deck-id-of (send "POST" "/decks" erin "title=B%C3%BCndel&design=zh")))
+             (id (deck-id-of (send "POST" "/decks" erin
+                                   "title=B%C3%BCndel&design=zh")))
              (api (string-append "/api/decks/" id))
              (png (real-png 7))
-             (sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=b.png") erin png)) "sha"))
+             (sha (jref (json-body (send-bytes
+                                    "POST"
+                                    (string-append api "/assets?name=b.png")
+                                    erin
+                                    png))
+                        "sha"))
              (deck (json-body (send "GET" api erin)))
              (slide (vector-ref (doc-slides (jref deck "doc")) 0))
              (doc `(("format" . 1)
-                    ("slides" . ,(vector
-                                  (map (lambda (p)
-                                         (if (equal? (car p) "elements")
-                                             (cons "elements"
-                                                   (vector-append
-                                                    (cdr p)
-                                                    (vector `(("id" . "img") ("type" . "image") ("asset" . ,sha)
-                                                              ("x" . 100) ("y" . 100) ("w" . 400) ("h" . 300)))))
-                                             p))
-                                       slide)))))
+                    ("slides"
+                     .
+                     ,(vector (map (lambda (p)
+                                     (if
+                                      (equal? (car p) "elements")
+                                      (cons
+                                       "elements"
+                                       (vector-append
+                                        (cdr p)
+                                        (vector
+                                         `(("id" . "img")
+                                           ("type" . "image")
+                                           ("asset" . ,sha)
+                                           ("x" . 100)
+                                           ("y" . 100)
+                                           ("w" . 400)
+                                           ("h" . 300)))))
+                                      p))
+                                   slide)))))
              (count-decks (lambda ()
-                            (let ((n (db-scalar db "SELECT count(*) FROM presentations WHERE owner_id = $1"
-                                                (col (find-user-by-name db "erin") "id"))))
+                            (let
+                                ((n (db-scalar
+                                     db
+                                     "SELECT count(*) FROM presentations WHERE owner_id = $1"
+                                     (col (find-user-by-name db "erin")
+                                          "id"))))
                               (if (string? n) (string->number n) n)))))
-        (test-equal 200 (status (send-json "PUT" api erin `(("revision" . 1) ("doc" . ,doc)))))
-        (let* ((r (send "GET" (string-append "/decks/" id "/export.zip") erin))
+        (test-equal 200
+                    (status (send-json "PUT" api erin
+                                       `(("revision" . 1) ("doc" . ,doc)))))
+        (let* ((r (send "GET"
+                        (string-append "/decks/" id "/export.zip")
+                        erin))
                (zip-bytes (http-response-body r))
                (zip-file (string-append data-dir "/test-export.zip")))
           (test-equal 200 (status r))
-          (test-equal "application/zip" (http-response-header r "Content-Type"))
-          (test-assert (has? (http-response-header r "Content-Disposition") ".zip"))
+          (test-equal "application/zip"
+                      (http-response-header r "Content-Type"))
+          (test-assert (has? (http-response-header r "Content-Disposition")
+                             ".zip"))
           (let ((p (open-binary-output-file zip-file)))
             (write-bytevector zip-bytes p)
             (close-port p))
@@ -609,122 +1084,239 @@
             (lambda (z)
               (let ((names (zip-entry-names z)))
                 (for-each (lambda (n) (test-assert n (member n names)))
-                          (list "manifest.json" "presentation.json" "LIESMICH.txt"
+                          (list "manifest.json" "presentation.json"
+                                "LIESMICH.txt"
                                 (string-append "assets/" sha ".png")
-                                "exports/folien.pdf" "exports/notizen.pdf"
-                                "exports/handout-2.pdf" "exports/handout-4.pdf" "exports/folien.pptx"
-                                "player/index.html" "player/deck-data.js" "player/folien-player.js"
-                                "player/css/slides.css" "player/fonts/Inter-Regular.woff2"))
-                (test-equal png (zip-read-entry-bytevector z (string-append "assets/" sha ".png")))
+                                "exports/folien.pdf"
+                                "exports/notizen.pdf"
+                                "exports/handout-2.pdf"
+                                "exports/handout-4.pdf"
+                                "exports/folien.pptx"
+                                "player/index.html"
+                                "player/deck-data.js"
+                                "player/folien-player.js"
+                                "player/css/slides.css"
+                                "player/fonts/Inter-Regular.woff2"))
+                (test-equal png
+                            (zip-read-entry-bytevector
+                             z
+                             (string-append "assets/" sha ".png")))
                 (test-equal "Bündel"
-                  (jref (json-parse (utf8->string (zip-read-entry-bytevector z "manifest.json"))) "title")))))
+                            (jref (json-parse
+                                   (utf8->string
+                                    (zip-read-entry-bytevector z
+                                                               "manifest.json")))
+                                  "title")))))
           ;; The same file again comes from the cache.
-          (test-equal zip-bytes (http-response-body (send "GET" (string-append "/decks/" id "/export.zip") erin)))
+          (test-equal zip-bytes
+                      (http-response-body
+                       (send "GET"
+                             (string-append "/decks/" id "/export.zip")
+                             erin)))
           ;; Import: a new deck with the same document and its asset.
           (let* ((before (count-decks))
                  (r (send-bytes "POST" "/api/import" erin zip-bytes))
                  (new-id (jref (json-body r) "id"))
-                 (new-deck (json-body (send "GET" (string-append "/api/decks/" new-id) erin))))
+                 (new-deck (json-body (send
+                                       "GET"
+                                       (string-append "/api/decks/" new-id)
+                                       erin))))
             (test-equal 201 (status r))
             (test-assert (not (equal? new-id id)))
             (test-equal (+ before 1) (count-decks))
             (test-equal "Bündel" (jref new-deck "title"))
             (test-equal "zh" (jref new-deck "design"))
             ;; (compared as stored: jsonb orders the keys)
-            (test-equal (json->string (jref (json-body (send "GET" api erin)) "doc"))
+            (test-equal (json->string (jref (json-body (send "GET" api erin))
+                                            "doc"))
                         (json->string (jref new-deck "doc")))
-            (test-equal 200 (status (send "GET" (string-append "/api/decks/" new-id "/assets/" sha) erin))))
+            (test-equal 200
+                        (status (send "GET"
+                                      (string-append "/api/decks/" new-id
+                                                     "/assets/" sha)
+                                      erin))))
           ;; Somebody else's import is theirs: dave cannot see erin's deck.
-          (test-equal 404 (status (send "GET" (string-append "/api/decks/" id) (sign-in "dave" "davepassword")))))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append "/api/decks/" id)
+                                    (sign-in "dave" "davepassword")))))
 
         ;; Refusals: nothing is created.
         (let* ((before (count-decks))
                (zip (lambda (entries)
                       (call-with-output-zip-bytevector
-                       (lambda (z)
-                         (for-each (lambda (e)
-                                     (zip-add-stored-entry z (car e)
-                                                           (if (string? (cdr e)) (string->utf8 (cdr e)) (cdr e))))
-                                   entries)))))
+                          (lambda (z)
+                            (for-each (lambda (e)
+                                        (zip-add-stored-entry
+                                         z
+                                         (car e)
+                                         (if (string? (cdr e))
+                                             (string->utf8 (cdr e))
+                                             (cdr e))))
+                                      entries)))))
                (manifest (lambda (extra)
-                           (json->string `(("format" . "folien-bundle") ("version" . 1) ("title" . "X")
-                                           ("design" . "zh") ,@extra))))
+                           (json->string
+                            `(("format" . "folien-bundle")
+                              ("version" . 1)
+                              ("title" . "X")
+                              ("design" . "zh")
+                              ,@extra))))
                (good-doc (json->string doc))
                (refused (lambda (label bytes part)
-                          (let ((r (send-bytes "POST" "/api/import" erin bytes)))
+                          (let
+                              ((r (send-bytes "POST" "/api/import" erin
+                                              bytes)))
                             (test-equal label 400 (status r))
-                            (test-assert label (has? (jref (json-body r) "error") part))))))
+                            (test-assert
+                             label
+                             (has? (jref (json-body r) "error") part))))))
           (refused "not a zip" (string->utf8 "hello") "kein lesbares ZIP")
           (refused "empty" (bytevector) "leer")
-          (refused "no manifest" (zip `(("presentation.json" . ,good-doc))) "manifest.json fehlt")
-          (refused "wrong format" (zip `(("manifest.json" . "{\"format\":\"other\"}"))) "kein Folien-Archiv")
-          (refused "newer" (zip `(("manifest.json" . ,(json->string '(("format" . "folien-bundle") ("version" . 99))))))
+          (refused "no manifest"
+                   (zip `(("presentation.json" . ,good-doc)))
+                   "manifest.json fehlt")
+          (refused "wrong format"
+                   (zip `(("manifest.json" . "{\"format\":\"other\"}")))
+                   "kein Folien-Archiv")
+          (refused "newer"
+                   (zip `(("manifest.json"
+                           .
+                           ,(json->string
+                             '(("format" . "folien-bundle")
+                               ("version" . 99))))))
                    "neueren Version")
-          (refused "bad json" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . "{"))) "kein gültiges JSON")
-          (refused "invalid doc" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . "{\"format\":1}")))
+          (refused "bad json"
+                   (zip `(("manifest.json" . ,(manifest '()))
+                          ("presentation.json" . "{")))
+                   "kein gültiges JSON")
+          (refused "invalid doc"
+                   (zip `(("manifest.json" . ,(manifest '()))
+                          ("presentation.json" . "{\"format\":1}")))
                    "ungültig")
-          (refused "asset missing" (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . ,good-doc)))
+          (refused "asset missing"
+                   (zip `(("manifest.json" . ,(manifest '()))
+                          ("presentation.json" . ,good-doc)))
                    "fehlt ein Bild")
           (refused "asset tampered"
-                   (zip `(("manifest.json" . ,(manifest '())) ("presentation.json" . ,good-doc)
-                          (,(string-append "assets/" sha ".png") . ,(bytevector-append png (bytevector 1)))))
+                   (zip `(("manifest.json" . ,(manifest '()))
+                          ("presentation.json" . ,good-doc)
+                          (,(string-append "assets/" sha ".png")
+                           .
+                           ,(bytevector-append png (bytevector 1)))))
                    "Prüfsumme")
           (test-equal before (count-decks)))))
 
     (test-group "sharing"
-      (send "POST" "/admin/users" admin "username=frank&password=frankpassword")
+      (send "POST" "/admin/users" admin
+            "username=frank&password=frankpassword")
       (send "POST" "/admin/users" admin "username=gina&password=ginapassword")
       (let* ((frank (sign-in "frank" "frankpassword"))
              (gina (sign-in "gina" "ginapassword"))
-             (id (deck-id-of (send "POST" "/decks" frank "title=Geteilt&design=folien")))
+             (id (deck-id-of (send "POST" "/decks" frank
+                                   "title=Geteilt&design=folien")))
              (api (string-append "/api/decks/" id))
              (page (string-append "/decks/" id))
              (png (real-png 3))
-             (sha (jref (json-body (send-bytes "POST" (string-append api "/assets") frank png)) "sha"))
+             (sha (jref (json-body (send-bytes "POST"
+                                               (string-append api "/assets")
+                                               frank
+                                               png))
+                        "sha"))
              (gina-id (user-id "gina"))
              (doc (jref (json-body (send "GET" api frank)) "doc"))
-             (rev (lambda () (jref (json-body (send "GET" api frank)) "revision")))
-             (status-of (lambda () (jref (json-body (send "GET" api frank)) "status"))))
+             (rev (lambda ()
+                    (jref (json-body (send "GET" api frank)) "revision")))
+             (status-of (lambda ()
+                          (jref (json-body (send "GET" api frank))
+                                "status"))))
         (test-equal "not shared yet" 404 (status (send "GET" api gina)))
-        (test-assert (not (has? (body (send "GET" "/shared" gina)) (string-append "/decks/" id))))
+        (test-assert (not (has? (body (send "GET" "/shared" gina))
+                                (string-append "/decks/" id))))
         ;; View
         (test-equal (string-append page "?m=shared")
-                    (location (send "POST" (string-append page "/shares") frank "username=gina&role=view")))
-        (test-assert (has? (body (send "GET" "/shared" gina)) (string-append "/decks/" id)))
+                    (location (send "POST"
+                                    (string-append page "/shares")
+                                    frank
+                                    "username=gina&role=view")))
+        (test-assert (has? (body (send "GET" "/shared" gina))
+                           (string-append "/decks/" id)))
         (test-assert (has? (body (send "GET" "/shared" gina)) "darf ansehen"))
         (test-equal 200 (status (send "GET" api gina)))
         (test-equal "view" (jref (json-body (send "GET" api gina)) "role"))
-        (test-assert (has? (body (send "GET" page gina)) "von frank, Sie dürfen ansehen"))
-        (test-assert "no sharing card for others" (not (has? (body (send "GET" page gina)) "Freigeben</h3>")))
+        (test-assert (has? (body (send "GET" page gina))
+                           "von frank, Sie dürfen ansehen"))
+        (test-assert "no sharing card for others"
+                     (not (has? (body (send "GET" page gina))
+                                "Freigeben</h3>")))
         (test-assert (has? (body (send "GET" page frank)) "Freigeben</h3>"))
-        (test-equal 403 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,doc)))))
-        (test-equal (string-append page "?m=read-only") (location (send "GET" (string-append page "/edit") gina)))
+        (test-equal 403
+                    (status (send-json "PUT" api gina
+                                       `(("revision" . ,(rev))
+                                         ("doc" . ,doc)))))
         (test-equal (string-append page "?m=read-only")
-                    (location (send "POST" (string-append page "/rename") gina "title=Gekapert")))
-        (test-equal 200 (status (send "GET" (string-append api "/assets/" sha) gina)))
-        (test-equal 403 (status (send-bytes "POST" (string-append api "/assets") gina png)))
-        (test-equal 200 (status (send "GET" (string-append page "/export.pdf") gina)))
-        (test-equal 200 (status (send "GET" (string-append page "/present") gina)))
+                    (location (send "GET" (string-append page "/edit") gina)))
+        (test-equal (string-append page "?m=read-only")
+                    (location (send "POST"
+                                    (string-append page "/rename")
+                                    gina
+                                    "title=Gekapert")))
+        (test-equal 200
+                    (status (send "GET"
+                                  (string-append api "/assets/" sha)
+                                  gina)))
+        (test-equal 403
+                    (status (send-bytes "POST"
+                                        (string-append api "/assets")
+                                        gina
+                                        png)))
+        (test-equal 200
+                    (status (send "GET"
+                                  (string-append page "/export.pdf")
+                                  gina)))
+        (test-equal 200
+                    (status (send "GET"
+                                  (string-append page "/present")
+                                  gina)))
         ;; only the owner archives, trashes, deletes, shares
         (send "POST" (string-append page "/archive") gina)
         (send "POST" (string-append page "/trash") gina)
         (test-equal "active" (status-of))
         (test-equal (string-append page "?m=not-owner")
-                    (location (send "POST" (string-append page "/shares") gina "username=dave&role=edit")))
+                    (location (send "POST"
+                                    (string-append page "/shares")
+                                    gina
+                                    "username=dave&role=edit")))
         ;; a copy for gina is hers
         (send "POST" (string-append page "/duplicate") gina)
         (test-assert (has? (body (send "GET" "/" gina)) "Geteilt (Kopie)"))
         ;; Edit
-        (send "POST" (string-append page "/shares") frank "username=gina&role=edit")
+        (send "POST"
+              (string-append page "/shares")
+              frank
+              "username=gina&role=edit")
         (test-equal "edit" (jref (json-body (send "GET" api gina)) "role"))
-        (test-equal 200 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,doc)))))
-        (test-equal 201 (status (send-bytes "POST" (string-append api "/assets") gina
-                                            (bytevector-append png (bytevector 9)))))
-        (test-equal 200 (status (send "GET" (string-append page "/edit") gina)))
+        (test-equal 200
+                    (status (send-json "PUT" api gina
+                                       `(("revision" . ,(rev))
+                                         ("doc" . ,doc)))))
+        (test-equal 201
+                    (status (send-bytes
+                             "POST"
+                             (string-append api "/assets")
+                             gina
+                             (bytevector-append png (bytevector 9)))))
+        (test-equal 200
+                    (status (send "GET" (string-append page "/edit") gina)))
         (test-equal (string-append page "?m=no-user")
-                    (location (send "POST" (string-append page "/shares") frank "username=nobody&role=view")))
+                    (location (send "POST"
+                                    (string-append page "/shares")
+                                    frank
+                                    "username=nobody&role=view")))
         (test-equal (string-append page "?m=not-owner")
-                    (location (send "POST" (string-append page "/shares") frank "username=frank&role=view")))
+                    (location (send "POST"
+                                    (string-append page "/shares")
+                                    frank
+                                    "username=frank&role=view")))
         ;; in the trash, the deck is gone for those it is shared with
         (send "POST" (string-append page "/trash") frank)
         (test-equal 404 (status (send "GET" api gina)))
@@ -732,55 +1324,109 @@
         (test-equal 200 (status (send "GET" api gina)))
         ;; Versions: gina (edit) saves one, changes the deck, restores it.
         (test-equal (string-append page "?m=version-saved#versions")
-                    (location (send "POST" (string-append page "/versions") gina "name=Erster+Stand")))
+                    (location (send "POST"
+                                    (string-append page "/versions")
+                                    gina
+                                    "name=Erster+Stand")))
         (test-assert (has? (body (send "GET" page gina)) "Erster Stand"))
         (let* ((before (jref (json-body (send "GET" api gina)) "doc"))
                (two `(("format" . 1)
-                      ("slides" . ,(vector (vector-ref (doc-slides before) 0) (new-slide "folien" "blank"))))))
-          (test-equal 200 (status (send-json "PUT" api gina `(("revision" . ,(rev)) ("doc" . ,two)))))
-          (test-equal 2 (vector-length (doc-slides (jref (json-body (send "GET" api gina)) "doc"))))
-          (let* ((vid (id->string (db-scalar db "SELECT id FROM snapshots WHERE presentation_id = $1 AND name = $2"
+                      ("slides"
+                       .
+                       ,(vector (vector-ref (doc-slides before) 0)
+                                (new-slide "folien" "blank"))))))
+          (test-equal 200
+                      (status (send-json
+                               "PUT"
+                               api
+                               gina
+                               `(("revision" . ,(rev)) ("doc" . ,two)))))
+          (test-equal 2
+                      (vector-length (doc-slides
+                                      (jref (json-body (send "GET" api gina))
+                                            "doc"))))
+          (let* ((vid (id->string (db-scalar db
+                                             "SELECT id FROM snapshots WHERE presentation_id = $1 AND name = $2"
                                              id "Erster Stand")))
                  (r-before (rev)))
             (test-equal (string-append page "?m=version-restored#versions")
-                        (location (send "POST" (string-append page "/versions/" vid "/restore") gina)))
-            (test-equal 1 (vector-length (doc-slides (jref (json-body (send "GET" api gina)) "doc"))))
+                        (location (send
+                                   "POST"
+                                   (string-append page "/versions/" vid
+                                                  "/restore")
+                                   gina)))
+            (test-equal 1
+                        (vector-length (doc-slides
+                                        (jref
+                                         (json-body (send "GET" api gina))
+                                         "doc"))))
             (test-equal (+ r-before 1) (rev))
             ;; the changed state was kept
-            (test-assert (has? (body (send "GET" page gina)) "Stand vor dem Wiederherstellen"))
+            (test-assert (has? (body (send "GET" page gina))
+                               "Stand vor dem Wiederherstellen"))
             (test-equal (string-append page "?m=bad-name#versions")
-                        (location (send "POST" (string-append page "/versions") gina "name=")))
+                        (location (send "POST"
+                                        (string-append page "/versions")
+                                        gina
+                                        "name=")))
             (send "POST" (string-append page "/versions/" vid "/delete") gina)
-            (test-assert (not (has? (body (send "GET" page gina)) "Erster Stand")))))
+            (test-assert (not (has? (body (send "GET" page gina))
+                                    "Erster Stand")))))
         ;; a viewer can not
-        (send "POST" (string-append page "/shares") frank "username=gina&role=view")
+        (send "POST"
+              (string-append page "/shares")
+              frank
+              "username=gina&role=view")
         (test-equal (string-append page "?m=read-only#versions")
-                    (location (send "POST" (string-append page "/versions") gina "name=Nein")))
-        (test-assert "no versions card for viewers" (not (has? (body (send "GET" page gina)) "id=\"versions\"")))
+                    (location (send "POST"
+                                    (string-append page "/versions")
+                                    gina
+                                    "name=Nein")))
+        (test-assert "no versions card for viewers"
+                     (not (has? (body (send "GET" page gina))
+                                "id=\"versions\"")))
 
         ;; unshare
         (test-equal (string-append page "?m=unshared")
-                    (location (send "POST" (string-append page "/shares/" gina-id "/delete") frank)))
+                    (location (send "POST"
+                                    (string-append page "/shares/" gina-id
+                                                   "/delete")
+                                    frank)))
         (test-equal 404 (status (send "GET" api gina)))
-        (test-equal 404 (status (send "GET" (string-append api "/assets/" sha) gina)))))
+        (test-equal 404
+                    (status (send "GET"
+                                  (string-append api "/assets/" sha)
+                                  gina)))))
 
     (test-group "tags, search, templates"
       (send "POST" "/admin/users" admin "username=hana&password=hanapassword")
       (let* ((hana (sign-in "hana" "hanapassword"))
-             (mk (lambda (title) (deck-id-of (send "POST" "/decks" hana (string-append "title=" title "&design=zh")))))
+             (mk (lambda (title)
+                   (deck-id-of (send "POST" "/decks" hana
+                                     (string-append "title=" title
+                                                    "&design=zh")))))
              (a (mk "Budget+2026"))
              (b (mk "Strategie"))
              (c (mk "100%25+sicher")))
         (test-equal (string-append "/decks/" a "?m=tags-saved")
-                    (location (send "POST" (string-append "/decks/" a "/tags") hana "tags=Finanzen,+2026,+,Finanzen")))
+                    (location (send "POST"
+                                    (string-append "/decks/" a "/tags")
+                                    hana
+                                    "tags=Finanzen,+2026,+,Finanzen")))
         (send "POST" (string-append "/decks/" b "/tags") hana "tags=Planung")
-        (test-assert (has? (body (send "GET" (string-append "/decks/" a) hana)) "value=\"Finanzen, 2026\""))
-        (let ((list-of (lambda (q) (body (send "GET" (string-append "/" q) hana)))))
+        (test-assert (has? (body (send "GET"
+                                       (string-append "/decks/" a)
+                                       hana))
+                           "value=\"Finanzen, 2026\""))
+        (let
+            ((list-of (lambda (q)
+                        (body (send "GET" (string-append "/" q) hana)))))
           (test-assert (has? (list-of "") "class=\"tag\""))
           ;; search: title or tag, case-insensitive
           (test-assert (has? (list-of "?q=budget") "Budget 2026"))
           (test-assert (not (has? (list-of "?q=budget") "Strategie")))
-          (test-assert "a tag matches" (has? (list-of "?q=planung") "Strategie"))
+          (test-assert "a tag matches"
+                       (has? (list-of "?q=planung") "Strategie"))
           ;; a percent sign is a percent sign
           (test-assert (has? (list-of "?q=%25") "100% sicher"))
           (test-assert (not (has? (list-of "?q=%25") "Budget")))
@@ -789,128 +1435,243 @@
           (test-assert (not (has? (list-of "?tag=Finanzen") "Strategie")))
           (test-assert (has? (list-of "?tag=Finanzen") "alle zeigen")))
         ;; templates
-        (test-assert "no templates yet" (not (has? (body (send "GET" "/" hana)) "name=\"template\"")))
+        (test-assert "no templates yet"
+                     (not (has? (body (send "GET" "/" hana))
+                                "name=\"template\"")))
         (test-equal (string-append "/decks/" b "?m=template-on")
-                    (location (send "POST" (string-append "/decks/" b "/template") hana "on=1")))
+                    (location (send "POST"
+                                    (string-append "/decks/" b "/template")
+                                    hana
+                                    "on=1")))
         (test-assert (has? (body (send "GET" "/" hana)) "Vorlage: Strategie"))
-        (let* ((r (send "POST" "/decks" hana (string-append "title=Aus+Vorlage&design=folien&template=" b)))
-               (new-id (substring (location r) 7 (- (string-length (location r)) 5)))
-               (deck (json-body (send "GET" (string-append "/api/decks/" new-id) hana))))
+        (let* ((r (send "POST" "/decks" hana
+                        (string-append
+                         "title=Aus+Vorlage&design=folien&template=" b)))
+               (new-id (substring (location r)
+                                  7
+                                  (- (string-length (location r)) 5)))
+               (deck (json-body (send "GET"
+                                      (string-append "/api/decks/" new-id)
+                                      hana))))
           (test-assert (has? (location r) "/edit"))
           (test-equal "Aus Vorlage" (jref deck "title"))
           (test-equal "zh" (jref deck "design")))
         ;; someone else's templates only when shared
         (let ((dave (sign-in "dave" "davepassword")))
-          (test-assert (not (has? (body (send "GET" "/" dave)) "Vorlage: Strategie")))
+          (test-assert (not (has? (body (send "GET" "/" dave))
+                                  "Vorlage: Strategie")))
           (test-equal "/?m=no-template"
-                      (location (send "POST" "/decks" dave (string-append "title=X&design=zh&template=" b))))
-          (send "POST" (string-append "/decks/" b "/shares") hana "username=dave&role=view")
-          (test-assert (has? (body (send "GET" "/" dave)) "Vorlage: Strategie")))
+                      (location (send "POST" "/decks" dave
+                                      (string-append
+                                       "title=X&design=zh&template=" b))))
+          (send "POST"
+                (string-append "/decks/" b "/shares")
+                hana
+                "username=dave&role=view")
+          (test-assert (has? (body (send "GET" "/" dave))
+                             "Vorlage: Strategie")))
         (send "POST" (string-append "/decks/" b "/template") hana "on=0")
-        (test-assert (not (has? (body (send "GET" "/" hana)) "Vorlage: Strategie")))))
+        (test-assert (not (has? (body (send "GET" "/" hana))
+                                "Vorlage: Strategie")))))
 
     (test-group "maintenance"
       (send "POST" "/admin/users" admin "username=ida&password=idapassword")
       (let* ((ida (sign-in "ida" "idapassword"))
-             (mk (lambda (title) (deck-id-of (send "POST" "/decks" ida (string-append "title=" title "&design=zh")))))
+             (mk (lambda (title)
+                   (deck-id-of (send "POST" "/decks" ida
+                                     (string-append "title=" title
+                                                    "&design=zh")))))
              (old (mk "Alt"))
              (keep (mk "Bleibt"))
              (young (mk "Frisch"))
              (png real-png)
              (upload (lambda (deck bytes)
-                       (jref (json-body (send-bytes "POST" (string-append "/api/decks/" deck "/assets") ida bytes))
+                       (jref (json-body
+                              (send-bytes
+                               "POST"
+                               (string-append "/api/decks/" deck "/assets")
+                               ida
+                               bytes))
                              "sha")))
              (only-old (upload old (png 41)))
              (shared (upload old (png 42)))
-             (now-ms (lambda (extra) (+ extra (exact (floor (* 1000 (current-second)))))))
-             (orphan (string-append data-dir "/assets/ab/" (make-string 64 #\e)))
+             (now-ms (lambda (extra)
+                       (+ extra (exact (floor (* 1000 (current-second)))))))
+             (orphan (string-append data-dir "/assets/ab/"
+                                    (make-string 64 #\e)))
              (tmp-file (string-append data-dir "/tmp/import-leftover")))
         (upload keep (png 42))
         ;; thumbnail copies of both
-        (send "GET" (string-append "/api/decks/" old "/assets/" only-old "?w=320") ida)
-        (send "GET" (string-append "/api/decks/" old "/assets/" shared "?w=320") ida)
+        (send "GET"
+              (string-append "/api/decks/" old "/assets/" only-old "?w=320")
+              ida)
+        (send "GET"
+              (string-append "/api/decks/" old "/assets/" shared "?w=320")
+              ida)
         (send "POST" (string-append "/decks/" old "/trash") ida)
         (send "POST" (string-append "/decks/" young "/trash") ida)
         ;; old has been in the trash for 40 days
-        (db-exec db "UPDATE presentations SET status_at = now() - interval '40 days' WHERE id = $1" old)
-        (unless (directory-exists? (string-append data-dir "/assets/ab")) (make-directory (string-append data-dir "/assets/ab")))
-        (unless (directory-exists? (string-append data-dir "/tmp")) (make-directory (string-append data-dir "/tmp")))
-        (for-each (lambda (f) (let ((p (open-binary-output-file f))) (write-bytevector (bytevector 1) p) (close-port p)))
+        (db-exec db
+                 "UPDATE presentations SET status_at = now() - interval '40 days' WHERE id = $1"
+                 old)
+        (unless (directory-exists? (string-append data-dir "/assets/ab"))
+          (make-directory (string-append data-dir "/assets/ab")))
+        (unless (directory-exists? (string-append data-dir "/tmp"))
+          (make-directory (string-append data-dir "/tmp")))
+        (for-each (lambda (f)
+                    (let ((p (open-binary-output-file f)))
+                      (write-bytevector (bytevector 1) p)
+                      (close-port p)))
                   (list orphan tmp-file))
         ;; now: only the old trash goes; the assets are too young to go
         (let ((r (run-maintenance! db data-dir 30 (now-ms 0))))
           (test-equal 1 (cdr (assq 'decks r)))
           (test-equal 0 (cdr (assq 'assets r))))
-        (test-equal 404 (status (send "GET" (string-append "/api/decks/" old) ida)))
-        (test-equal 200 (status (send "GET" (string-append "/api/decks/" young) ida)))
+        (test-equal 404
+                    (status (send "GET"
+                                  (string-append "/api/decks/" old)
+                                  ida)))
+        (test-equal 200
+                    (status (send "GET"
+                                  (string-append "/api/decks/" young)
+                                  ida)))
         (test-assert (file-exists? (asset-file data-dir only-old)))
         (test-assert (file-exists? orphan))
         ;; two days later: the unused asset and the leftovers go; the
         ;; content another deck still uses stays
-        (let ((r (run-maintenance! db data-dir 30 (now-ms (* 2 24 60 60 1000)))))
+        (let
+            ((r (run-maintenance! db data-dir 30
+                                  (now-ms (* 2 24 60 60 1000)))))
           (test-assert (>= (cdr (assq 'assets r)) 1))
           (test-assert (>= (cdr (assq 'files r)) 2)))
         (test-assert (not (file-exists? (asset-file data-dir only-old))))
-        (test-equal #f (db-scalar db "SELECT 1 FROM assets WHERE sha256 = $1" only-old))
+        (test-equal #f
+                    (db-scalar db "SELECT 1 FROM assets WHERE sha256 = $1"
+                               only-old))
         (test-assert (file-exists? (asset-file data-dir shared)))
-        (test-equal 200 (status (send "GET" (string-append "/api/decks/" keep "/assets/" shared) ida)))
+        (test-equal 200
+                    (status (send "GET"
+                                  (string-append "/api/decks/" keep "/assets/"
+                                                 shared)
+                                  ida)))
         (test-assert (not (file-exists? orphan)))
         (test-assert (not (file-exists? tmp-file)))
-        (let ((variant (lambda (sha) (string-append data-dir "/variants/" (substring sha 0 2) "/" sha "-320.png"))))
-          (test-assert "the gone asset's thumbnail goes" (not (file-exists? (variant only-old))))
-          (test-assert "the kept one's stays" (file-exists? (variant shared))))))
+        (let
+            ((variant (lambda (sha)
+                        (string-append data-dir "/variants/"
+                                       (substring sha 0 2)
+                                       "/"
+                                       sha
+                                       "-320.png"))))
+          (test-assert "the gone asset's thumbnail goes"
+                       (not (file-exists? (variant only-old))))
+          (test-assert "the kept one's stays"
+                       (file-exists? (variant shared))))))
 
-    (test-group "publications: frozen copies at stable addresses, offline players"
+    (test-group
+        "publications: frozen copies at stable addresses, offline players"
       (send "POST" "/admin/users" admin "username=fay&password=faypassword")
       (send "POST" "/admin/users" admin "username=gus&password=guspassword")
       (let* ((fay (sign-in "fay" "faypassword"))
              (gus (sign-in "gus" "guspassword"))
-             (id (deck-id-of (send "POST" "/decks" fay "title=Vortrag&design=zh")))
+             (id (deck-id-of (send "POST" "/decks" fay
+                                   "title=Vortrag&design=zh")))
              (api (string-append "/api/decks/" id))
              (png (real-png 21))
-             (sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=p.png") fay png)) "sha"))
-             (hidden-sha (jref (json-body (send-bytes "POST" (string-append api "/assets?name=h.png") fay (real-png 22)))
+             (sha (jref (json-body (send-bytes
+                                    "POST"
+                                    (string-append api "/assets?name=p.png")
+                                    fay
+                                    png))
+                        "sha"))
+             (hidden-sha (jref (json-body
+                                (send-bytes
+                                 "POST"
+                                 (string-append api "/assets?name=h.png")
+                                 fay
+                                 (real-png 22)))
                                "sha"))
-             (slide (vector-ref (doc-slides (jref (json-body (send "GET" api fay)) "doc")) 0))
+             (slide (vector-ref (doc-slides
+                                 (jref (json-body (send "GET" api fay))
+                                       "doc"))
+                                0))
              (image (lambda (eid asset)
-                      `(("id" . ,eid) ("type" . "image") ("asset" . ,asset)
-                        ("x" . 100) ("y" . 100) ("w" . 400) ("h" . 300))))
+                      `(("id" . ,eid)
+                        ("type" . "image")
+                        ("asset" . ,asset)
+                        ("x" . 100)
+                        ("y" . 100)
+                        ("w" . 400)
+                        ("h" . 300))))
              (with-elements (lambda (s sid extra more)
-                              (append (map (lambda (p)
-                                             (cond ((equal? (car p) "elements")
-                                                    (cons "elements" (vector-append (cdr p) (vector extra))))
-                                                   ((equal? (car p) "id") (cons "id" sid))
-                                                   (else p)))
-                                           s)
+                              (append (map
+                                       (lambda (p)
+                                         (cond
+                                          ((equal? (car p) "elements")
+                                           (cons
+                                            "elements"
+                                            (vector-append (cdr p)
+                                                           (vector extra))))
+                                          ((equal? (car p) "id")
+                                           (cons "id" sid))
+                                          (else p)))
+                                       s)
                                       more)))
              (doc (lambda (marker)
                     `(("format" . 1)
                       ("footer" . (("date" . "auto") ("number" . #t)))
                       ("slides"
-                       . ,(vector
-                           (with-elements slide "s1" (image "img" sha)
-                                          `(("notes" . (("paragraphs"
-                                                         . #((("runs" . #((("text" . ,marker)))))))))))
-                           (with-elements slide "s2" (image "hid" hidden-sha) '(("hidden" . #t))))))))
+                       .
+                       ,(vector (with-elements slide
+                                  "s1"
+                                  (image "img" sha)
+                                  `(("notes"
+                                     .
+                                     (("paragraphs"
+                                       .
+                                       #((("runs"
+                                           .
+                                           #((("text" . ,marker)))))))))))
+                                (with-elements slide
+                                  "s2"
+                                  (image "hid" hidden-sha)
+                                  '(("hidden" . #t))))))))
              (stamps (lambda ()
                        (map (lambda (r) (col r "stamp"))
-                            (db-rows db "SELECT stamp FROM publications b WHERE presentation_id = $1 ORDER BY id" id))))
-             (token (lambda () (db-scalar db "SELECT public_token FROM presentations WHERE id = $1" id)))
+                            (db-rows db
+                                     "SELECT stamp FROM publications b WHERE presentation_id = $1 ORDER BY id"
+                                     id))))
+             (token (lambda ()
+                      (db-scalar db
+                                 "SELECT public_token FROM presentations WHERE id = $1"
+                                 id)))
              (deck-url (lambda (path) (string-append "/decks/" id path))))
-        (test-equal 200 (status (send-json "PUT" api fay `(("revision" . 1) ("doc" . ,(doc "Geheime Notiz"))))))
+        (test-equal 200
+                    (status (send-json "PUT" api fay
+                                       `(("revision" . 1)
+                                         ("doc" . ,(doc "Geheime Notiz"))))))
         ;; only the owner publishes
-        (test-equal (deck-url "?m=not-owner") (location (send "POST" (deck-url "/publish") gus "label=x")))
+        (test-equal (deck-url "?m=not-owner")
+                    (location (send "POST"
+                                    (deck-url "/publish")
+                                    gus
+                                    "label=x")))
         (test-equal '() (stamps))
         (test-assert "no publishing card yet without a token"
-          (has? (body (send "GET" (deck-url "") fay)) "Noch nicht veröffentlicht"))
+                     (has? (body (send "GET" (deck-url "") fay))
+                           "Noch nicht veröffentlicht"))
         (test-equal (deck-url "?m=published#publish")
-          (location (send "POST" (deck-url "/publish") fay "label=Tagung+Bern")))
+                    (location (send "POST"
+                                    (deck-url "/publish")
+                                    fay
+                                    "label=Tagung+Bern")))
         (let* ((t (token))
                (first (car (stamps)))
                (base (string-append "/p/" t "/" first)))
           (test-equal 16 (string-length t))
           (test-equal 10 (string-length first))
-          (test-assert "the deck page lists it" (has? (body (send "GET" (deck-url "") fay)) base))
+          (test-assert "the deck page lists it"
+                       (has? (body (send "GET" (deck-url "") fay)) base))
           ;; anyone, signed out
           (let ((r (send "GET" (string-append "/p/" t) #f)))
             (test-equal 200 (status r))
@@ -918,67 +1679,159 @@
             (test-assert (has? (body r) "Tagung Bern"))
             (test-assert (has? (body r) (string-append base "/deck.json"))))
           (test-equal 200 (status (send "GET" base #f)))
-          (test-equal 200 (status (send "GET" (string-append base "/present") #f)))
-          (let* ((d (json-body (send "GET" (string-append base "/deck.json") #f)))
+          (test-equal 200
+                      (status (send "GET"
+                                    (string-append base "/present")
+                                    #f)))
+          (let* ((d (json-body (send "GET"
+                                     (string-append base "/deck.json")
+                                     #f)))
                  (slides (doc-slides (jref d "doc"))))
             (test-equal "Vortrag" (jref d "title"))
             (test-equal "zh" (jref d "design"))
             (test-equal "hidden slide left out" 1 (vector-length slides))
-            (test-equal "notes left out" #f (jref (vector-ref slides 0) "notes" #f))
-            (test-equal "the date is fixed" "fixed" (jref (jref (jref d "doc") "footer") "date")))
-          (test-equal 1 (vector-length (json-body (send "GET" (string-append base "/designs.json") #f))))
+            (test-equal "notes left out" #f
+                        (jref (vector-ref slides 0) "notes" #f))
+            (test-equal "the date is fixed" "fixed"
+                        (jref (jref (jref d "doc") "footer") "date")))
+          (test-equal 1
+                      (vector-length (json-body
+                                      (send
+                                       "GET"
+                                       (string-append base "/designs.json")
+                                       #f))))
           ;; the assets it shows, and only those
           (let ((r (send "GET" (string-append base "/assets/" sha) #f)))
             (test-equal 200 (status r))
             (test-equal png (http-response-body r)))
-          (test-equal 404 (status (send "GET" (string-append base "/assets/" hidden-sha) #f)))
-          (test-equal 404 (status (send "GET" (string-append base "/assets/" (make-string 64 #\a)) #f)))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append base "/assets/" hidden-sha)
+                                    #f)))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append base "/assets/"
+                                                   (make-string 64 #\a))
+                                    #f)))
           (let ((r (send "GET" (string-append base "/folien.pdf") #f)))
             (test-equal 200 (status r))
-            (test-equal "application/pdf" (http-response-header r "Content-Type"))
-            (test-equal "%PDF" (utf8->string (bytevector-copy (http-response-body r) 0 4))))
-          (test-equal 404 (status (send "GET" (string-append "/p/" t "/1999-01-01") #f)))
+            (test-equal "application/pdf"
+                        (http-response-header r "Content-Type"))
+            (test-equal "%PDF"
+                        (utf8->string (bytevector-copy (http-response-body r)
+                                                       0
+                                                       4))))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append "/p/" t "/1999-01-01")
+                                    #f)))
           (test-equal 404 (status (send "GET" "/p/nosuchname" #f)))
           ;; The deck changes, and is published again: a second copy; the
           ;; first stays as it was.
           (send "POST" (deck-url "/rename") fay "title=Vortrag+neu")
-          (test-equal 200 (status (send-json "PUT" api fay `(("revision" . 2) ("doc" . ,(doc "Andere Notiz"))))))
+          (test-equal 200
+                      (status (send-json
+                               "PUT"
+                               api
+                               fay
+                               `(("revision" . 2)
+                                 ("doc" . ,(doc "Andere Notiz"))))))
           (send "POST" (deck-url "/publish") fay "label=")
           (test-equal (list first (string-append first "-2")) (stamps))
-          (test-equal "Vortrag" (jref (json-body (send "GET" (string-append base "/deck.json") #f)) "title"))
+          (test-equal "Vortrag"
+                      (jref (json-body (send "GET"
+                                             (string-append base "/deck.json")
+                                             #f))
+                            "title"))
           (let ((newest (body (send "GET" (string-append "/p/" t) #f))))
-            (test-assert "the newest is the deck's address" (has? newest "Vortrag neu"))
+            (test-assert "the newest is the deck's address"
+                         (has? newest "Vortrag neu"))
             (test-assert "it lists both" (has? newest "Alle Fassungen")))
           ;; A readable name; the token keeps working.
-          (test-equal (deck-url "?m=bad-slug#publish") (location (send "POST" (deck-url "/public-name") fay "slug=a+b")))
-          (test-equal (deck-url "?m=bad-slug#publish") (location (send "POST" (deck-url "/public-name") fay "slug=-ab")))
+          (test-equal (deck-url "?m=bad-slug#publish")
+                      (location (send "POST"
+                                      (deck-url "/public-name")
+                                      fay
+                                      "slug=a+b")))
+          (test-equal (deck-url "?m=bad-slug#publish")
+                      (location (send "POST"
+                                      (deck-url "/public-name")
+                                      fay
+                                      "slug=-ab")))
           (test-equal (deck-url "?m=slug-saved#publish")
-            (location (send "POST" (deck-url "/public-name") fay "slug=Tagung-Bern")))
-          (test-equal "tagung-bern" (db-scalar db "SELECT public_slug FROM presentations WHERE id = $1" id))
-          (test-equal 200 (status (send "GET" (string-append "/p/tagung-bern/" first) #f)))
+                      (location (send "POST"
+                                      (deck-url "/public-name")
+                                      fay
+                                      "slug=Tagung-Bern")))
+          (test-equal "tagung-bern"
+                      (db-scalar db
+                                 "SELECT public_slug FROM presentations WHERE id = $1"
+                                 id))
+          (test-equal 200
+                      (status (send "GET"
+                                    (string-append "/p/tagung-bern/" first)
+                                    #f)))
           (test-equal 200 (status (send "GET" base #f)))
-          (let ((other (deck-id-of (send "POST" "/decks" gus "title=Anderes&design=zh"))))
-            (test-equal (string-append "/decks/" other "?m=slug-taken#publish")
-              (location (send "POST" (string-append "/decks/" other "/public-name") gus "slug=tagung-bern")))
-            (test-equal (string-append "/decks/" other "?m=slug-taken#publish")
-              (location (send "POST" (string-append "/decks/" other "/public-name") gus
-                              (string-append "slug=" t))))
+          (let
+              ((other (deck-id-of (send "POST" "/decks" gus
+                                        "title=Anderes&design=zh"))))
+            (test-equal (string-append "/decks/" other
+                                       "?m=slug-taken#publish")
+                        (location (send
+                                   "POST"
+                                   (string-append "/decks/" other
+                                                  "/public-name")
+                                   gus
+                                   "slug=tagung-bern")))
+            (test-equal (string-append "/decks/" other
+                                       "?m=slug-taken#publish")
+                        (location (send
+                                   "POST"
+                                   (string-append "/decks/" other
+                                                  "/public-name")
+                                   gus
+                                   (string-append "slug=" t))))
             (test-equal (string-append "/decks/" other "?m=not-owner")
-              (location (send "POST" (string-append "/decks/" other "/public-name") fay "slug=meins"))))
+                        (location (send
+                                   "POST"
+                                   (string-append "/decks/" other
+                                                  "/public-name")
+                                   fay
+                                   "slug=meins"))))
           ;; Withdrawn: gone; the other stays.
-          (let ((pid (id->string (db-scalar db "SELECT id FROM publications WHERE presentation_id = $1 AND stamp = $2"
-                                            id first))))
+          (let
+              ((pid (id->string (db-scalar db
+                                           "SELECT id FROM publications WHERE presentation_id = $1 AND stamp = $2"
+                                           id first))))
             (test-equal (deck-url "?m=not-owner")
-              (location (send "POST" (deck-url (string-append "/publications/" pid "/withdraw")) gus)))
+                        (location (send
+                                   "POST"
+                                   (deck-url
+                                    (string-append "/publications/" pid
+                                                   "/withdraw"))
+                                   gus)))
             (test-equal (deck-url "?m=withdrawn#publish")
-              (location (send "POST" (deck-url (string-append "/publications/" pid "/withdraw")) fay))))
+                        (location (send
+                                   "POST"
+                                   (deck-url
+                                    (string-append "/publications/" pid
+                                                   "/withdraw"))
+                                   fay))))
           (test-equal 404 (status (send "GET" base #f)))
-          (test-equal 404 (status (send "GET" (string-append base "/assets/" sha) #f)))
-          (test-equal 200 (status (send "GET" (string-append "/p/tagung-bern/" first "-2") #f)))
+          (test-equal 404
+                      (status (send "GET"
+                                    (string-append base "/assets/" sha)
+                                    #f)))
+          (test-equal 200
+                      (status (send "GET"
+                                    (string-append "/p/tagung-bern/" first
+                                                   "-2")
+                                    #f)))
           ;; In the trash: not shown; restored: back.
           (send "POST" (deck-url "/trash") fay)
           (test-equal 404 (status (send "GET" "/p/tagung-bern" #f)))
-          (test-equal (deck-url "?m=not-owner") (location (send "POST" (deck-url "/publish") fay)))
+          (test-equal (deck-url "?m=not-owner")
+                      (location (send "POST" (deck-url "/publish") fay)))
           (send "POST" (deck-url "/restore") fay)
           (test-equal 200 (status (send "GET" "/p/tagung-bern" #f))))
         ;; The offline players: without hidden slides; with the notes for
@@ -986,23 +1839,36 @@
         (let* ((r (send "GET" (deck-url "/export.html") fay))
                (html (body r)))
           (test-equal 200 (status r))
-          (test-equal "text/html; charset=utf-8" (http-response-header r "Content-Type"))
-          (test-assert (has? (http-response-header r "Content-Disposition") "Vortrag neu.html"))
+          (test-equal "text/html; charset=utf-8"
+                      (http-response-header r "Content-Type"))
+          (test-assert (has? (http-response-header r "Content-Disposition")
+                             "Vortrag neu.html"))
           (test-assert (has? html (string-append "data-sha=\"" sha "\"")))
           (test-assert (has? html (base64-encode png)))
-          (test-assert "the hidden slide's image is not in it" (not (has? html hidden-sha)))
+          (test-assert "the hidden slide's image is not in it"
+                       (not (has? html hidden-sha)))
           (test-assert "the notes for the console" (has? html "Andere Notiz"))
           (test-assert "with the console's code" (has? html "startPresenter"))
           (test-assert "without notes on request"
-            (not (has? (body (send "GET" (deck-url "/export.html?notes=0") fay)) "Andere Notiz")))
-          (test-assert "fonts inline" (has? html "url(\"data:font/woff2;base64,"))
-          (test-assert "no script ends early" (not (has? (substring html (string-length "<!doctype") (string-length html))
-                                                        "</script><")))
-          (test-equal 404 (status (send "GET" (deck-url "/export.html") gus))))
+                       (not (has? (body
+                                   (send "GET"
+                                         (deck-url "/export.html?notes=0")
+                                         fay))
+                                  "Andere Notiz")))
+          (test-assert "fonts inline"
+                       (has? html "url(\"data:font/woff2;base64,"))
+          (test-assert "no script ends early"
+                       (not (has? (substring html
+                                             (string-length "<!doctype")
+                                             (string-length html))
+                                  "</script><")))
+          (test-equal 404
+                      (status (send "GET" (deck-url "/export.html") gus))))
         (let* ((r (send "GET" (deck-url "/export-offline.zip") fay))
                (zip-file (string-append data-dir "/test-offline.zip")))
           (test-equal 200 (status r))
-          (test-equal "application/zip" (http-response-header r "Content-Type"))
+          (test-equal "application/zip"
+                      (http-response-header r "Content-Type"))
           (let ((p (open-binary-output-file zip-file)))
             (write-bytevector (http-response-body r) p)
             (close-port p))
@@ -1010,41 +1876,60 @@
             (lambda (z)
               (let ((names (zip-entry-names z)))
                 (for-each (lambda (n) (test-assert n (member n names)))
-                          (list "index.html" "deck-data.js" "folien-player.js" "LIESMICH.txt"
-                                "css/slides.css" "fonts/Inter-Regular.woff2"
+                          (list "index.html" "deck-data.js" "folien-player.js"
+                                "LIESMICH.txt"
+                                "css/slides.css"
+                                "fonts/Inter-Regular.woff2"
                                 (string-append "assets/" sha ".png")))
-                (test-assert (not (member (string-append "assets/" hidden-sha ".png") names)))
+                (test-assert (not (member
+                                   (string-append "assets/" hidden-sha ".png")
+                                   names)))
                 (test-assert (member "css/app.css" names))
-                (test-assert (has? (utf8->string (zip-read-entry-bytevector z "deck-data.js"))
+                (test-assert (has? (utf8->string
+                                    (zip-read-entry-bytevector z
+                                                               "deck-data.js"))
                                    "Andere Notiz")))))
           (let ((p (open-binary-output-file zip-file)))
-            (write-bytevector (http-response-body (send "GET" (deck-url "/export-offline.zip?notes=0") fay)) p)
+            (write-bytevector (http-response-body
+                               (send "GET"
+                                     (deck-url "/export-offline.zip?notes=0")
+                                     fay))
+                              p)
             (close-port p))
           (call-with-input-zip zip-file
             (lambda (z)
               (test-assert "the folder without notes"
-                (not (has? (utf8->string (zip-read-entry-bytevector z "deck-data.js")) "Andere Notiz")))
-              (test-assert (has? (utf8->string (zip-read-entry-bytevector z "LIESMICH.txt"))
+                           (not (has? (utf8->string
+                                       (zip-read-entry-bytevector z
+                                                                  "deck-data.js"))
+                                      "Andere Notiz")))
+              (test-assert (has? (utf8->string
+                                  (zip-read-entry-bytevector z
+                                                             "LIESMICH.txt"))
                                  "Notizen sind nicht dabei")))))))
 
     (test-group "outdated hashes are upgraded at sign-in"
       (parameterize ((password-pbkdf2-iterations 500))
         (create-user! db "old" (password-hash "oldpassword")))
       (test-assert (sign-in "old" "oldpassword"))
-      (test-assert
-       (not (parameterize ((password-pbkdf2-iterations fast-iterations))
-              (password-needs-rehash? (col (find-user-by-name db "old") "pass_hash"))))))))
+      (test-assert (not (parameterize
+                            ((password-pbkdf2-iterations fast-iterations))
+                          (password-needs-rehash?
+                           (col (find-user-by-name db "old")
+                                "pass_hash"))))))))
 
-(cond
-  ((not config-path)
-   (display "skipped: set FOLIEN_TEST_CONFIG to a config for a *_test database\n"))
-  (else
-   (let* ((cfg (read-config config-path))
-          (name (config-ref cfg 'db-name "")))
-     (if (and (>= (string-length name) 5)
-              (string=? (substring name (- (string-length name) 5) (string-length name))
-                        "_test"))
-         (run-tests cfg)
-         (error "refusing to run: db-name must end in _test" name)))))
+(cond ((not config-path)
+       (display
+        "skipped: set FOLIEN_TEST_CONFIG to a config for a *_test database\n"))
+      (else (let* ((cfg (read-config config-path))
+                   (name (config-ref cfg 'db-name "")))
+              (if (and (>= (string-length name) 5)
+                       (string=? (substring name
+                                            (- (string-length name) 5)
+                                            (string-length name))
+                                 "_test"))
+                  (run-tests cfg)
+                  (error "refusing to run: db-name must end in _test"
+                         name)))))
 
 (test-end "folien web (live database)")

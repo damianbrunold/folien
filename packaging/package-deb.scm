@@ -27,9 +27,9 @@
 (import (scheme base)
         (scheme char)
         (scheme file)
-        (scheme write)
         (scheme process-context)
         (scheme time)
+        (scheme write)
         (srfi 1)
         (srfi 13)
         (scm crypto)
@@ -41,13 +41,15 @@
 (define root (directory-name here))
 (module-search-path! (cons here (module-search-path)))
 
-(import (build deb) (build package))
+(import (build deb)
+        (build package))
 
 (define pkg "folien")
 (define maintainer "Damian Brunold <damian.brunold@bluewin.ch>")
 (define services '("folien.service"))
-(define timers '("folien-health.timer" "folien-restart.timer"
-                 "folien-maintenance.timer" "folien-backup.timer"))
+(define timers
+  '("folien-health.timer" "folien-restart.timer" "folien-maintenance.timer"
+    "folien-backup.timer"))
 (define default-port 8090)
 
 ;; bin/ scripts that belong to development, not to a server
@@ -57,7 +59,9 @@
 
 ;; --- helpers ------------------------------------------------------------------
 
-(define (say . parts) (for-each display parts) (newline))
+(define (say . parts)
+  (for-each display parts)
+  (newline))
 
 (define (fail . parts)
   (for-each (lambda (p) (display p (current-error-port))) parts)
@@ -91,16 +95,17 @@
   (let loop ((i 0) (out '()))
     (let ((j (string-contains s from i)))
       (if j
-          (loop (+ j (string-length from)) (cons to (cons (substring s i j) out)))
-          (apply string-append (reverse (cons (substring s i (string-length s)) out)))))))
+          (loop (+ j (string-length from))
+                (cons to (cons (substring s i j) out)))
+          (apply string-append
+                 (reverse (cons (substring s i (string-length s)) out)))))))
 
 (define (substitute text pairs)
   (fold (lambda (kv acc) (replace-all acc (car kv) (cdr kv))) text pairs))
 
 (define (git . args)
   (let ((r (run-program/capture (append (list "git" "-C" root) args))))
-    (unless (and (pair? r) (eqv? (car r) 0))
-      (fail "git failed: " args))
+    (unless (and (pair? r) (eqv? (car r) 0)) (fail "git failed: " args))
     (string-trim-both (cadr r))))
 
 ;; Recursive file list under dir, relative "/"-joined paths, sorted; skips
@@ -113,12 +118,12 @@
 (define (tree-files dir)
   (let walk ((rel ""))
     (let ((os (if (string=? rel "") dir (join-path dir rel)))
-          (join (lambda (n) (if (string=? rel "") n (string-append rel "/" n)))))
-      (append
-       (filter-map (lambda (f) (and (not (skip-name? f)) (join f)))
-                   (list-sort-strings (directory-files os)))
-       (append-map (lambda (d) (if (skip-name? d) '() (walk (join d))))
-                   (list-sort-strings (directory-directories os)))))))
+          (join (lambda (n)
+                  (if (string=? rel "") n (string-append rel "/" n)))))
+      (append (filter-map (lambda (f) (and (not (skip-name? f)) (join f)))
+                          (list-sort-strings (directory-files os)))
+              (append-map (lambda (d) (if (skip-name? d) '() (walk (join d))))
+                          (list-sort-strings (directory-directories os)))))))
 
 (define (list-sort-strings l)
   (let insert ((l l) (out '()))
@@ -133,8 +138,9 @@
 ;; --- arguments ----------------------------------------------------------------
 
 (define (usage)
-  (display "Usage: scm packaging/package-deb.scm [--out <dir>] [--dabscm <dir>] [--allow-dirty]\n"
-           (current-error-port))
+  (display
+   "Usage: scm packaging/package-deb.scm [--out <dir>] [--dabscm <dir>] [--allow-dirty]\n"
+   (current-error-port))
   (exit 2))
 
 (define-values (out-dir dabscm allow-dirty?)
@@ -158,9 +164,10 @@
         "commit them or pass --allow-dirty"))
 
 (define hash (git "rev-parse" "--short=8" "HEAD"))
-(define epoch (if dirty?
-                  (exact (floor (current-second)))
-                  (string->number (git "log" "-1" "--format=%ct"))))
+(define epoch
+  (if dirty?
+      (exact (floor (current-second)))
+      (string->number (git "log" "-1" "--format=%ct"))))
 (define version (deb-version epoch hash dirty?))
 
 (define jar (join-path dabscm "scm-java" "scm.jar"))
@@ -181,7 +188,8 @@
     ("@SECRET_PLACEHOLDER@" . ,secret-placeholder)))
 
 (define (template name)
-  (lf-only (substitute (read-text (in-root "packaging" "templates" name)) subst)))
+  (lf-only (substitute (read-text (in-root "packaging" "templates" name))
+                       subst)))
 
 (define opt (string-append "opt/" pkg "/"))
 (define app (string-append opt "app/"))
@@ -191,79 +199,111 @@
 (define (from-repo name mode path) (list name mode (read-bytes path)))
 
 (define app-files
-  (append
-   (filter-map
-    (lambda (f)
-      (and (string-suffix? ".scm" f)
-           (not (member f bin-exclude))
-           (from-repo (string-append app "bin/" f) #o644 (in-root "bin" f))))
-    (list-sort-strings (directory-files (in-root "bin"))))
-   (append-map
-    (lambda (tree)
-      (map (lambda (f) (from-repo (string-append app tree "/" f) #o644 (in-root tree f)))
-           (tree-files (in-root tree))))
-    trees)
-   (list (text (string-append app "config.example.scm") #o644
-               (read-text (in-root "config.example.scm"))))))
+  (append (filter-map (lambda (f)
+                        (and (string-suffix? ".scm" f)
+                             (not (member f bin-exclude))
+                             (from-repo (string-append app "bin/" f)
+                                        #o644
+                                        (in-root "bin" f))))
+                      (list-sort-strings (directory-files (in-root "bin"))))
+          (append-map (lambda (tree)
+                        (map (lambda (f)
+                               (from-repo (string-append app tree "/" f)
+                                          #o644
+                                          (in-root tree f)))
+                             (tree-files (in-root tree))))
+                      trees)
+          (list (text (string-append app "config.example.scm")
+                      #o644
+                      (read-text (in-root "config.example.scm"))))))
 
 ;; The units of deploy/systemd/ are written for deploy/install.sh; in the
 ;; package the runtime and the app live elsewhere.
 (define (packaged-unit text)
   (substitute text
-              `(("/usr/local/bin/scm" . ,(string-append "/opt/" pkg "/bin/scm"))
+              `(("/usr/local/bin/scm"
+                 .
+                 ,(string-append "/opt/" pkg "/bin/scm"))
                 (,(string-append "WorkingDirectory=/opt/" pkg "\n")
-                 . ,(string-append "WorkingDirectory=/opt/" pkg "/app\n"))
-                (,(string-append "/opt/" pkg "/deploy/healthcheck.sh /etc/" pkg "/config.scm ")
-                 . ,(string-append "/opt/" pkg "/bin/healthcheck ")))))
+                 .
+                 ,(string-append "WorkingDirectory=/opt/" pkg "/app\n"))
+                (,(string-append "/opt/" pkg "/deploy/healthcheck.sh /etc/"
+                                 pkg "/config.scm ")
+                 .
+                 ,(string-append "/opt/" pkg "/bin/healthcheck ")))))
 
 (define unit-files
   (map (lambda (u)
-         (text (string-append "usr/lib/systemd/system/" u) #o644
-               (packaged-unit (lf-only (read-text (in-root "deploy" "systemd" u))))))
-       (filter (lambda (f) (or (string-suffix? ".service" f) (string-suffix? ".timer" f)))
-               (list-sort-strings (directory-files (in-root "deploy" "systemd"))))))
+         (text (string-append "usr/lib/systemd/system/" u)
+               #o644
+               (packaged-unit (lf-only (read-text
+                                        (in-root "deploy" "systemd" u))))))
+       (filter (lambda (f)
+                 (or (string-suffix? ".service" f)
+                     (string-suffix? ".timer" f)))
+               (list-sort-strings (directory-files
+                                   (in-root "deploy" "systemd"))))))
 
 (define copyright
-  (string-append
-   "Folien (" pkg ")\n\nCopyright (c) Damian Brunold.\n"
-   "\n\nBundled third-party material:\n\n"
-   "* The Inter typeface (/opt/" pkg "/app/static/fonts/), by The Inter Project\n"
-   "  Authors, under the SIL Open Font License 1.1:\n\n"
-   (read-text (in-root "static" "fonts" "Inter-LICENSE.txt"))
-   "\n\n* Scheme runtime /opt/" pkg "/lib/scm.jar: dabscm " dabscm-version
-   (let ((lic (join-path dabscm "LICENSE")))
-     (if (file-exists? lic)
-         (string-append ", under this licence:\n\n" (read-text lic))
-         ".\n"))))
+  (string-append "Folien (" pkg ")\n\nCopyright (c) Damian Brunold.\n"
+                 "\n\nBundled third-party material:\n\n"
+                 "* The Inter typeface (/opt/"
+                 pkg
+                 "/app/static/fonts/), by The Inter Project\n"
+                 "  Authors, under the SIL Open Font License 1.1:\n\n"
+                 (read-text (in-root "static" "fonts" "Inter-LICENSE.txt"))
+                 "\n\n* Scheme runtime /opt/"
+                 pkg
+                 "/lib/scm.jar: dabscm "
+                 dabscm-version
+                 (let ((lic (join-path dabscm "LICENSE")))
+                   (if (file-exists? lic)
+                       (string-append ", under this licence:\n\n"
+                                      (read-text lic))
+                       ".\n"))))
 
 (define doc-files
-  (list (from-repo (string-append doc "README.Debian") #o644
+  (list (from-repo (string-append doc "README.Debian")
+                   #o644
                    (in-root "deploy" "debian" "README.Debian"))
         (text (string-append doc "copyright") #o644 copyright)
-        (from-repo (string-append doc "nginx.conf.example") #o644
+        (from-repo (string-append doc "nginx.conf.example")
+                   #o644
                    (in-root "deploy" "nginx.conf.example"))
-        (from-repo (string-append doc "apache2.conf.example") #o644
+        (from-repo (string-append doc "apache2.conf.example")
+                   #o644
                    (in-root "deploy" "apache2.conf.example"))
-        (from-repo (string-append doc "apache2-subpath.conf.example") #o644
+        (from-repo (string-append doc "apache2-subpath.conf.example")
+                   #o644
                    (in-root "deploy" "apache2-subpath.conf.example"))))
 
 (define runtime-files
   (list (from-repo (string-append opt "lib/scm.jar") #o644 jar)
         (text (string-append opt "bin/scm") #o755 (template "scm.in"))
-        (text (string-append opt "bin/healthcheck") #o755 (template "healthcheck.in"))
-        (text (string-append "usr/bin/" pkg "-admin") #o755 (template "admin.in"))
-        (text (string-append opt "VERSION") #o644
-              (string-append pkg " " version "\ncommit " hash
-                             "\ndabscm " dabscm-version "\n"))
-        (text (string-append "usr/share/" pkg "/config.default.scm") #o644
-              (default-config-text (read-text (in-root "config.example.scm"))))))
+        (text (string-append opt "bin/healthcheck")
+              #o755
+              (template "healthcheck.in"))
+        (text (string-append "usr/bin/" pkg "-admin")
+              #o755
+              (template "admin.in"))
+        (text (string-append opt "VERSION")
+              #o644
+              (string-append pkg " " version "\ncommit " hash "\ndabscm "
+                             dabscm-version "\n"))
+        (text (string-append "usr/share/" pkg "/config.default.scm")
+              #o644
+              (default-config-text (read-text
+                                    (in-root "config.example.scm"))))))
 
 (define data (append app-files unit-files doc-files runtime-files))
 
 (define installed-kib
   (+ (fold (lambda (e acc)
-             (+ acc (quotient (+ (bytevector-length (entry-content e)) 1023) 1024)))
-           0 data)
+             (+ acc
+                (quotient (+ (bytevector-length (entry-content e)) 1023)
+                          1024)))
+           0
+           data)
      (- (length (add-parent-dirs data)) (length data))))
 
 (define control
@@ -273,7 +313,10 @@
 (define md5sums
   (apply string-append
          (map (lambda (e)
-                (string-append (md5-hash (entry-content e)) "  " (entry-name e) "\n"))
+                (string-append (md5-hash (entry-content e))
+                               "  "
+                               (entry-name e)
+                               "\n"))
               data)))
 
 (define control-entries

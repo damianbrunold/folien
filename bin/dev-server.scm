@@ -21,6 +21,4 @@
 
 (supervise (list "scm" (string-append root "/bin/server.scm"))
            watched
-           `((label . "folien")
-             (work-dir . ,root)
-             (root . ,root)))
+           `((label . "folien") (work-dir . ,root) (root . ,root)))

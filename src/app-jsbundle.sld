@@ -27,8 +27,7 @@
             (loop (+ i 1))
             (substring s i (string-length s)))))
 
-    (define (index-of s part from)
-      (string-contains-from s part from))
+    (define (index-of s part from) (string-contains-from s part from))
 
     (define (read-text path)
       (call-with-input-file path
@@ -39,7 +38,9 @@
 
     ;; "./render.js" -> "render.js"
     (define (module-name spec)
-      (if (string-prefix? "./" spec) (substring spec 2 (string-length spec)) spec))
+      (if (string-prefix? "./" spec)
+          (substring spec 2 (string-length spec))
+          spec))
 
     ;; The quoted module of an import statement's text.
     (define (import-source text)
@@ -52,21 +53,27 @@
     (define (import->js text)
       (let ((src (import-source text))
             (star (index-of text "* as " 0)))
-        (cond
-          ((not src) (error "jsbundle: cannot read import" text))
-          (star
-           (let* ((start (+ star 5))
-                  (end (let loop ((i start))
-                         (if (or (= i (string-length text))
-                                 (char-whitespace? (string-ref text i)))
-                             i
-                             (loop (+ i 1))))))
-             (string-append "const " (substring text start end) " = __import(\"" src "\");")))
-          (else
-           (let* ((open (index-of text "{" 0))
-                  (close (index-of text "}" 0))
-                  (names (string-replace-all (substring text (+ open 1) close) " as " ": ")))
-             (string-append "const {" names "} = __import(\"" src "\");"))))))
+        (cond ((not src) (error "jsbundle: cannot read import" text))
+              (star (let* ((start (+ star 5))
+                           (end (let loop ((i start))
+                                  (if (or
+                                       (= i (string-length text))
+                                       (char-whitespace? (string-ref text i)))
+                                      i
+                                      (loop (+ i 1))))))
+                      (string-append "const "
+                                     (substring text start end)
+                                     " = __import(\""
+                                     src
+                                     "\");")))
+              (else (let* ((open (index-of text "{" 0))
+                           (close (index-of text "}" 0))
+                           (names (string-replace-all
+                                   (substring text (+ open 1) close)
+                                   " as "
+                                   ": ")))
+                      (string-append "const {" names "} = __import(\"" src
+                                     "\");"))))))
 
     (define export-forms
       '(("export async function " . "async function ")
@@ -86,30 +93,38 @@
     ;; Transforms one module: (lines . exported-names).
     (define (transform lines)
       (let loop ((ls lines) (out '()) (names '()) (pending #f))
-        (cond
-          ((null? ls)
-           (when pending (error "jsbundle: unfinished import" pending))
-           (cons (reverse out) (reverse names)))
-          (pending
-           (let ((text (string-append pending " " (trim-left (car ls)))))
-             (if (index-of text "from \"" 0)
-                 (loop (cdr ls) (cons (import->js text) out) names #f)
-                 (loop (cdr ls) out names text))))
-          ((string-prefix? "import " (car ls))
-           (if (index-of (car ls) "from \"" 0)
-               (loop (cdr ls) (cons (import->js (car ls)) out) names #f)
-               (loop (cdr ls) out names (car ls))))
-          (else
-           (let ((form (let find ((fs export-forms))
-                         (cond ((null? fs) #f)
-                               ((string-prefix? (car (car fs)) (car ls)) (car fs))
-                               (else (find (cdr fs)))))))
-             (if form
-                 (let* ((rest (substring (car ls) (string-length (car form)) (string-length (car ls))))
-                        (name (declared-name rest)))
-                   (loop (cdr ls) (cons (string-append (cdr form) rest) out)
-                         (cons name names) #f))
-                 (loop (cdr ls) (cons (car ls) out) names #f)))))))
+        (cond ((null? ls)
+               (when pending (error "jsbundle: unfinished import" pending))
+               (cons (reverse out) (reverse names)))
+              (pending (let
+                           ((text (string-append pending " "
+                                                 (trim-left (car ls)))))
+                         (if (index-of text "from \"" 0)
+                             (loop (cdr ls)
+                                   (cons (import->js text) out)
+                                   names
+                                   #f)
+                             (loop (cdr ls) out names text))))
+              ((string-prefix? "import " (car ls))
+               (if (index-of (car ls) "from \"" 0)
+                   (loop (cdr ls) (cons (import->js (car ls)) out) names #f)
+                   (loop (cdr ls) out names (car ls))))
+              (else (let ((form (let find ((fs export-forms))
+                                  (cond
+                                   ((null? fs) #f)
+                                   ((string-prefix? (car (car fs)) (car ls))
+                                    (car fs))
+                                   (else (find (cdr fs)))))))
+                      (if form
+                          (let* ((rest (substring (car ls)
+                                                  (string-length (car form))
+                                                  (string-length (car ls))))
+                                 (name (declared-name rest)))
+                            (loop (cdr ls)
+                                  (cons (string-append (cdr form) rest) out)
+                                  (cons name names)
+                                  #f))
+                          (loop (cdr ls) (cons (car ls) out) names #f)))))))
 
     (define (join lines)
       (let loop ((ls lines) (acc '()))
@@ -130,17 +145,23 @@ Description: The ES modules files (names in dir, dependencies first) as
        "  return __modules[name];\n}\n"
        (apply string-append
               (map (lambda (f)
-                     (let* ((t (transform (read-text (string-append dir "/" f))))
+                     (let* ((t (transform
+                                (read-text (string-append dir "/" f))))
                             (names (cdr t)))
-                       (string-append
-                        "\n// --- " f " ---\n"
-                        "__modules[\"" f "\"] = (function () {\n"
-                        (join (car t))
-                        "return {"
-                        (let loop ((ns names) (acc ""))
-                          (cond ((null? ns) acc)
-                                ((string=? acc "") (loop (cdr ns) (car ns)))
-                                (else (loop (cdr ns) (string-append acc ", " (car ns))))))
-                        "};\n})();\n")))
+                       (string-append "\n// --- " f " ---\n" "__modules[\"" f
+                                      "\"] = (function () {\n"
+                                      (join (car t))
+                                      "return {"
+                                      (let loop ((ns names) (acc ""))
+                                        (cond
+                                         ((null? ns) acc)
+                                         ((string=? acc "")
+                                          (loop (cdr ns) (car ns)))
+                                         (else
+                                          (loop
+                                           (cdr ns)
+                                           (string-append acc ", "
+                                                          (car ns))))))
+                                      "};\n})();\n")))
                    files))
        "})();\n"))))

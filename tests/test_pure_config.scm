@@ -3,9 +3,9 @@
 (import (scheme base)
         (scheme file)
         (scheme process-context)
-        (scm module)
         (scm fs)
         (scm io)
+        (scm module)
         (scm string)
         (scm test))
 
@@ -25,7 +25,9 @@
     path))
 
 (test-group "read-config"
-  (let ((cfg (read-config (tmp-file "a.scm" "(define port 8090)\n(define ttl (* 60 60))\n(define name \"x\")"))))
+  (let
+      ((cfg (read-config (tmp-file "a.scm"
+                                   "(define port 8090)\n(define ttl (* 60 60))\n(define name \"x\")"))))
     (test-equal 8090 (config-ref cfg 'port 0))
     (test-equal 3600 (config-ref cfg 'ttl 0))
     (test-equal "x" (config-ref cfg 'name #f))
@@ -38,11 +40,13 @@
     (test-equal "" (config-ref cfg 'url-prefix #f))))
 
 (test-group "create-config!"
-  (let ((ex (tmp-file "example.scm" "(define secret \"REPLACE_WITH_BASE64_SECRET\")"))
+  (let ((ex (tmp-file "example.scm"
+                      "(define secret \"REPLACE_WITH_BASE64_SECRET\")"))
         (target (string-append tmp "/config.scm")))
     (create-config! ex target)
     (let ((s (config-ref (read-config target) 'secret #f)))
-      (test-assert "secret replaced" (not (string=? s "REPLACE_WITH_BASE64_SECRET")))
+      (test-assert "secret replaced"
+                   (not (string=? s "REPLACE_WITH_BASE64_SECRET")))
       (test-equal 44 (string-length s)))
     (test-error "no overwrite" (create-config! ex target))
     (delete-file target)
@@ -53,8 +57,7 @@
     (make-directory app)
     (call-with-output-file (string-append app "/config.example.scm")
       (lambda (p) (write-string "(define http-port 1234)" p)))
-    (test-equal 1234
-      (config-ref (load-config app '()) 'http-port 0))
+    (test-equal 1234 (config-ref (load-config app '()) 'http-port 0))
     (test-assert (file-exists? (string-append app "/config.scm")))
     (delete-file (string-append app "/config.scm"))
     (delete-file (string-append app "/config.example.scm"))
@@ -65,7 +68,8 @@
   (test-equal '("new" "old") (config-secret '((s . ("new" "old"))) 's))
   (test-error (config-secret '() 's))
   (test-error (config-secret '((s . "REPLACE_WITH_BASE64_SECRET")) 's))
-  (test-error (config-secret '((s . ("new" "REPLACE_WITH_BASE64_SECRET"))) 's)))
+  (test-error (config-secret '((s . ("new" "REPLACE_WITH_BASE64_SECRET")))
+                             's)))
 
 (test-group "resolve-path"
   (test-equal "/etc/x" (resolve-path "/app" "/etc/x"))

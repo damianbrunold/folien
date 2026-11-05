@@ -8,12 +8,12 @@
 (define-library (app site)
   (import (scheme base)
           (scm net http static))
-  (export make-site
+  (export asset
+          cookie-path
+          make-site
           site-prefix
-          with-site
           url
-          asset
-          cookie-path)
+          with-site)
   (begin
 
     (define-record-type site
@@ -26,13 +26,12 @@
 
     ;; "" or "/" -> ""; "team/" -> "/team"
     (define (normalize-prefix p)
-      (let* ((s (if (and (> (string-length p) 0) (char=? (string-ref p 0) #\/))
+      (let* ((s (if (and (> (string-length p) 0)
+                         (char=? (string-ref p 0) #\/))
                     p
                     (string-append "/" p)))
              (n (string-length s)))
-        (if (char=? (string-ref s (- n 1)) #\/)
-            (substring s 0 (- n 1))
-            s)))
+        (if (char=? (string-ref s (- n 1)) #\/) (substring s 0 (- n 1)) s)))
 
     (define (make-site prefix static-dir)
       "Syntax: (make-site prefix static-dir)
@@ -40,15 +39,15 @@ Library: (app site)
 Description: A site mounted at prefix (\"\" for the host root) that serves
   static-dir under prefix/static."
       (let ((p (normalize-prefix prefix)))
-        (%make-site p (make-static-url static-dir (string-append p "/static")))))
+        (%make-site p
+                    (make-static-url static-dir
+                                     (string-append p "/static")))))
 
     (define (with-site site handler)
       "Syntax: (with-site site handler)
 Library: (app site)
 Description: Wraps handler so url and asset refer to site while it runs."
-      (lambda (req)
-        (parameterize ((current-site site))
-          (handler req))))
+      (lambda (req) (parameterize ((current-site site)) (handler req))))
 
     (define (url path)
       "Syntax: (url path)

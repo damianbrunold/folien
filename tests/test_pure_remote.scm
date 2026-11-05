@@ -4,8 +4,8 @@
 (import (scheme base)
         (scheme process-context)
         (srfi 18)
-        (scm module)
         (scm fs)
+        (scm module)
         (scm test))
 
 (define root
@@ -45,9 +45,8 @@
 
 (test-group "a listener that does not keep up loses the oldest"
   (let ((l (subscribe! "d4")))
-    (do ((i 0 (+ i 1))) ((= i 150))
-      (publish! "d4" (number->string i)))
-    (test-equal "50" (next-message l 1))   ; 50..149 kept
+    (do ((i 0 (+ i 1))) ((= i 150)) (publish! "d4" (number->string i)))
+    (test-equal "50" (next-message l 1)) ; 50..149 kept
     (unsubscribe! l)))
 
 (test-end "folien remote")

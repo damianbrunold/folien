@@ -6,9 +6,9 @@
 
 (import (scheme base)
         (scheme process-context)
-        (scm module)
         (scm fs)
         (scm log)
+        (scm module)
         (scm net http server))
 
 ;; Resolve the project root from this script's path so it runs from anywhere,
@@ -17,7 +17,10 @@
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app config) (app db) (app assets) (app web))
+(import (app assets)
+        (app config)
+        (app db)
+        (app web))
 
 (define cfg (load-config root (cdr (command-line))))
 (define host (config-ref cfg 'http-host "127.0.0.1"))
@@ -38,19 +41,33 @@
 (ensure-asset-dir data-dir)
 
 (define app
-  (make-app
-   `((url-prefix      . ,prefix)
-     (static-dir      . ,(resolve-path root (config-ref cfg 'static-dir "static")))
-     (data-dir        . ,data-dir)
-     (max-upload-bytes . ,(config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))
-     (db              . ,db)
-     (session-secret  . ,(config-secret cfg 'session-secret))
-     (session-max-age . ,(config-ref cfg 'session-max-age (* 60 60 24 7)))
-     (secure-cookies? . ,(config-ref cfg 'secure-cookies? #t)))))
+  (make-app `((url-prefix . ,prefix)
+              (static-dir .
+                          ,(resolve-path
+                            root
+                            (config-ref cfg 'static-dir "static")))
+              (data-dir . ,data-dir)
+              (max-upload-bytes .
+                                ,(config-ref cfg
+                                             'max-upload-bytes
+                                             (* 1024 1024 1024)))
+              (db . ,db)
+              (session-secret . ,(config-secret cfg 'session-secret))
+              (session-max-age .
+                               ,(config-ref cfg
+                                            'session-max-age
+                                            (* 60 60 24 7)))
+              (secure-cookies? . ,(config-ref cfg 'secure-cookies? #t)))))
 
-(log-info "app" (string-append "folien listening on http://" host ":"
-                               (number->string port) prefix "/"))
+(log-info "app"
+          (string-append "folien listening on http://" host ":"
+                         (number->string port)
+                         prefix
+                         "/"))
 ;; Uploads up to max-upload-bytes; the server spools bodies over 1 MB to
 ;; temporary files.
-(serve-forever port app (config-ref cfg 'http-max-threads 64) host 0
+(serve-forever port app
+               (config-ref cfg 'http-max-threads 64)
+               host
+               0
                (config-ref cfg 'max-upload-bytes (* 1024 1024 1024)))

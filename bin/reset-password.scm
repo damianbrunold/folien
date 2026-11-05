@@ -4,19 +4,26 @@
 ;; it was forgotten. The user's open sessions end; roles stay as they are.
 
 (import (scheme base)
-        (scheme write)
         (scheme process-context)
-        (scm module)
+        (scheme write)
         (scm fs)
+        (scm module)
         (scm terminal))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (scm crypto password) (app config) (app db) (app users) (app auth))
+(import (scm crypto password)
+        (app auth)
+        (app config)
+        (app db)
+        (app users))
 
-(define (fail msg) (display msg (current-error-port)) (newline (current-error-port)) (exit 1))
+(define (fail msg)
+  (display msg (current-error-port))
+  (newline (current-error-port))
+  (exit 1))
 
 (define args (cdr (command-line)))
 (define config-args

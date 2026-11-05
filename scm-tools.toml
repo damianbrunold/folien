@@ -1,0 +1,17 @@
+# Settings for `scm fmt` and `scm lint` (built into dabscm 2.21 and later).
+
+# uploaded assets and built packages
+exclude = ["var/**", "releases/**"]
+
+[format]
+width = 78
+# where the app's own libraries live, so imports can be resolved
+library-path = ["src", "packaging"]
+
+[format.indent]
+# number of distinguished arguments before the body (Emacs style)
+"route!" = 2
+"router-add!" = 3
+
+[lint]
+docstring-libraries = []

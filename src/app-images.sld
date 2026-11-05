@@ -10,15 +10,15 @@
 (define-library (app images)
   (import (scheme base)
           (scheme file)
-          (scm fs)
           (scm crypto)
+          (scm fs)
           (scm image))
-  (export raster-mime?
-          check-image
+  (export check-image
+          export-image
           image-display-size
-          variant-widths
           image-variant
-          export-image)
+          raster-mime?
+          variant-widths)
   (begin
 
     ;; Images above this are refused: decoding them needs too much memory.
@@ -51,12 +51,16 @@ Description: For a PNG or JPEG: (width . height) as shown (EXIF
   orientation applied) if it decodes, 'too-large above 50 megapixels,
   'invalid if it does not decode."
       (let ((info (image-info bytes)))
-        (cond
-          ((not info) 'invalid)
-          ((> (* (cdr (assq 'width info)) (cdr (assq 'height info))) max-pixels) 'too-large)
-          ((guard (e (#t #f)) (image-decode bytes (cons 'max-pixels max-pixels) '(orient . #f)))
-           (oriented-size info))
-          (else 'invalid))))
+        (cond ((not info) 'invalid)
+              ((> (* (cdr (assq 'width info)) (cdr (assq 'height info)))
+                  max-pixels)
+               'too-large)
+              ((guard (e (#t #f))
+                 (image-decode bytes
+                               (cons 'max-pixels max-pixels)
+                               '(orient . #f)))
+               (oriented-size info))
+              (else 'invalid))))
 
     (define (image-display-size path)
       "Syntax: (image-display-size path)
@@ -76,8 +80,14 @@ Description: (width . height) of the PNG or JPEG file at path as shown,
     (define variant-widths '(320 640 1280))
 
     (define (variant-path data-dir sha px ext)
-      (string-append data-dir "/variants/" (substring sha 0 2) "/" sha "-"
-                     (number->string px) "." ext))
+      (string-append data-dir "/variants/"
+                     (substring sha 0 2)
+                     "/"
+                     sha
+                     "-"
+                     (number->string px)
+                     "."
+                     ext))
 
     (define (ensure-dir path)
       (unless (directory-exists? path)
@@ -87,7 +97,10 @@ Description: (width . height) of the PNG or JPEG file at path as shown,
     ;; The image upright and fitted into px x px; a JPEG stays JPEG, a PNG
     ;; (which may be transparent) PNG. Returns (bytes . mime).
     (define (scaled bytes mime px)
-      (let* ((img (image-fit (image-decode bytes (cons 'max-pixels max-pixels)) px px)))
+      (let*
+          ((img (image-fit (image-decode bytes (cons 'max-pixels max-pixels))
+                           px
+                           px)))
         (if (equal? mime "image/jpeg")
             (cons (image->jpeg img 85) "image/jpeg")
             (cons (image->png img) "image/png"))))
@@ -100,20 +113,23 @@ Description: The path and content type (path . mime) of the asset sha
   pixels wide and high, made once and cached; #f if it cannot be made."
       (let ((ext (if (equal? mime "image/jpeg") "jpg" "png")))
         (let ((path (variant-path data-dir sha px ext)))
-          (cond
-            ((file-exists? path) (cons path mime))
-            ((not (file-exists? src)) #f)
-            (else
-             (guard (e (#t #f))
-               (let ((out (scaled (read-file src) mime px)))
-                 (ensure-dir data-dir)
-                 (ensure-dir (string-append data-dir "/variants"))
-                 (ensure-dir (string-append data-dir "/variants/" (substring sha 0 2)))
-                 ;; under a temporary name, then renamed: never half-written
-                 (let ((tmp (string-append path ".tmp-" (random-string "abcdefghijklmnop" 8))))
-                   (write-file tmp (car out))
-                   (move-file tmp path))
-                 (cons path mime))))))))
+          (cond ((file-exists? path) (cons path mime))
+                ((not (file-exists? src)) #f)
+                (else (guard (e (#t #f))
+                        (let ((out (scaled (read-file src) mime px)))
+                          (ensure-dir data-dir)
+                          (ensure-dir (string-append data-dir "/variants"))
+                          (ensure-dir (string-append data-dir "/variants/"
+                                                     (substring sha 0 2)))
+                          ;; under a temporary name, then renamed: never half-written
+                          (let
+                              ((tmp (string-append
+                                     path
+                                     ".tmp-"
+                                     (random-string "abcdefghijklmnop" 8))))
+                            (write-file tmp (car out))
+                            (move-file tmp path))
+                          (cons path mime))))))))
 
     ;; Pixels per slide unit an export embeds (a 1920-unit slide: 3840 px).
     (define export-density 2)
@@ -131,12 +147,16 @@ Description: A PNG or JPEG as an export should embed it in a box of
         (if (not info)
             (cons bytes mime)
             (let* ((wh (oriented-size info))
-                   (iw (car wh)) (ih (cdr wh))
+                   (iw (car wh))
+                   (ih (cdr wh))
                    (s ((if cover? max min) (/ box-w iw) (/ box-h ih)))
-                   (need (* export-density s))          ; wanted size / actual size
+                   (need (* export-density s)) ; wanted size / actual size
                    (upright? (= 1 (cdr (assq 'orientation info)))))
               (if (and upright? (>= need 0.8))
                   (cons bytes mime)
                   (guard (e (#t (cons bytes mime)))
                     (scaled bytes mime
-                            (max 1 (exact (ceiling (* (max iw ih) (min 1 need))))))))))))))
+                            (max 1
+                                 (exact
+                                  (ceiling
+                                   (* (max iw ih) (min 1 need))))))))))))))

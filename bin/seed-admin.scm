@@ -6,19 +6,27 @@
 ;; role. Safe to run again.
 
 (import (scheme base)
-        (scheme write)
         (scheme process-context)
-        (scm module)
+        (scheme write)
         (scm fs)
+        (scm module)
         (scm terminal))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (scm crypto password) (app config) (app db) (app users) (app auth) (app web))
+(import (scm crypto password)
+        (app auth)
+        (app config)
+        (app db)
+        (app users)
+        (app web))
 
-(define (fail msg) (display msg (current-error-port)) (newline (current-error-port)) (exit 1))
+(define (fail msg)
+  (display msg (current-error-port))
+  (newline (current-error-port))
+  (exit 1))
 
 (define args (cdr (command-line)))
 (define config-args
@@ -58,7 +66,10 @@
 (with-db-transaction db
   (lambda (tx)
     (create-role! tx admin-role)
-    (let ((id (if existing (col existing "id") (create-user! tx username hash))))
+    (let
+        ((id (if existing
+                 (col existing "id")
+                 (create-user! tx username hash))))
       (assign-role-by-name! tx id admin-role))))
 
 (display (if existing

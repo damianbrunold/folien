@@ -5,17 +5,19 @@
 ;; deploy/systemd/folien-maintenance.timer runs it every night.
 
 (import (scheme base)
-        (scheme write)
         (scheme process-context)
-        (scm module)
+        (scheme write)
         (scm fs)
-        (scm log))
+        (scm log)
+        (scm module))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (app config) (app db) (app maintenance))
+(import (app config)
+        (app db)
+        (app maintenance))
 
 (define cfg (load-config root (cdr (command-line))))
 (define db
@@ -27,10 +29,14 @@
            1))
 
 (define report
-  (run-maintenance! db (resolve-path root (config-ref cfg 'data-dir "var"))
+  (run-maintenance! db
+                    (resolve-path root (config-ref cfg 'data-dir "var"))
                     (config-ref cfg 'trash-days 30)))
 
 (log-info "maintenance"
-          (string-append "deleted from the trash: " (number->string (cdr (assq 'decks report)))
-                         ", unused assets: " (number->string (cdr (assq 'assets report)))
-                         ", files: " (number->string (cdr (assq 'files report)))))
+          (string-append "deleted from the trash: "
+                         (number->string (cdr (assq 'decks report)))
+                         ", unused assets: "
+                         (number->string (cdr (assq 'assets report)))
+                         ", files: "
+                         (number->string (cdr (assq 'files report)))))

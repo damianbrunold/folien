@@ -4,10 +4,10 @@
 ;; deploy/install.sh; refuses to overwrite an existing file.
 
 (import (scheme base)
-        (scheme write)
         (scheme process-context)
-        (scm module)
-        (scm fs))
+        (scheme write)
+        (scm fs)
+        (scm module))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))

@@ -10,11 +10,17 @@
 
 (define-library (app db)
   (import (scheme base)
-          (scm log)
-          (scm database postgres)
           (rename (scm database migrations)
-                  (run-migrations! pg-migrations-run!)))
-  (export make-db with-db-transaction db-rows db-row db-scalar db-exec migrate!)
+                  (run-migrations! pg-migrations-run!))
+          (scm database postgres)
+          (scm log))
+  (export db-exec
+          db-row
+          db-rows
+          db-scalar
+          make-db
+          migrate!
+          with-db-transaction)
   (begin
 
     (define-record-type db
@@ -42,7 +48,7 @@ Description: Calls (proc tx) inside a transaction, where tx is a db handle
   for the transaction's connection. Commits when proc returns; rolls back
   and re-raises when it raises."
       (if (db-conn db)
-          (proc db)                     ; already in one: join it
+          (proc db) ; already in one: join it
           (with-pg-pool-connection (db-pool db)
             (lambda (conn)
               (with-pg-transaction conn
@@ -68,8 +74,7 @@ Description: The first row alist of the query, or #f if it has none."
 Library: (app db)
 Description: The first column of the first row (a count, a RETURNING id),
   or #f if the query produced no rows."
-      (let ((row (apply db-row db sql params)))
-        (and row (cdr (car row)))))
+      (let ((row (apply db-row db sql params))) (and row (cdr (car row)))))
 
     (define (db-exec db sql . params)
       "Syntax: (db-exec db sql [param ...])
@@ -84,8 +89,9 @@ Description: Applies the pending .sql migrations in dir in lexical order,
   each in its own transaction, and records them in schema_migrations."
       (with-conn db
         (lambda (conn)
-          (pg-migrations-run!
-            (lambda (sql) (pg-exec conn sql))
-            (lambda (sql) (pg-result-rows (pg-query conn sql)))
-            dir
-            `((log-proc ,(lambda (m) (log-info "migrate" m))))))))))
+          (pg-migrations-run! (lambda (sql) (pg-exec conn sql))
+                              (lambda (sql)
+                                (pg-result-rows (pg-query conn sql)))
+                              dir
+                              `((log-proc
+                                 ,(lambda (m) (log-info "migrate" m))))))))))

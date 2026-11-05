@@ -29,7 +29,7 @@
 ;; list the new key first: ("new" "old"); sessions signed with the old key
 ;; stay valid until you remove it. bin/gen-secret.scm prints a new key.
 (define session-secret "REPLACE_WITH_BASE64_SECRET")
-(define session-max-age (* 60 60 24 7))   ; 7 days
+(define session-max-age (* 60 60 24 7)) ; 7 days
 
 ;; Cookies are sent over HTTPS only when #t. Keep #f for http://127.0.0.1
 ;; during development; deploy/install.sh sets #t.

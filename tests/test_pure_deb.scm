@@ -4,26 +4,32 @@
 (import (scheme base)
         (scheme file)
         (scheme process-context)
-        (scm module)
         (scm fs)
         (scm io)
+        (scm module)
         (scm string)
         (scm test))
 
 (define root
   (directory-name (directory-name (absolute-path (car (command-line))))))
-(module-search-path! (cons (string-append root "/packaging") (module-search-path)))
+(module-search-path! (cons (string-append root "/packaging")
+                           (module-search-path)))
 (module-search-path! (cons (string-append root "/src") (module-search-path)))
 
-(import (build package) (app config))
+(import (app config)
+        (build package))
 
 (test-runner-factory scm-test-runner)
 (test-begin "folien deb")
 
-(test-equal "2026.10.17.125642+g1056360d" (deb-version 1792241802 "1056360d" #f))
-(test-equal "2026.10.17.125642+g1056360d.dirty" (deb-version 1792241802 "1056360d" #t))
+(test-equal "2026.10.17.125642+g1056360d"
+            (deb-version 1792241802 "1056360d" #f))
+(test-equal "2026.10.17.125642+g1056360d.dirty"
+            (deb-version 1792241802 "1056360d" #t))
 
-(let* ((text (default-config-text (read-file-string (string-append root "/config.example.scm"))))
+(let* ((text (default-config-text (read-file-string
+                                   (string-append root
+                                                  "/config.example.scm"))))
        (tmp (mktemp '(prefix . "folien-deb-config"))))
   (call-with-output-file tmp (lambda (p) (write-string text p)))
   (let ((cfg (read-config tmp)))
