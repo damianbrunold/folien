@@ -11,10 +11,11 @@ StartLimitBurst=5
 Type=simple
 User=folien
 Group=folien
-WorkingDirectory=/opt/folien
-# deploy/install.sh replaces the scm path with $SCM. Pending migrations
+WorkingDirectory=/opt/folien/app
+# The paths are the Debian package's; deploy/install.sh rewrites them for
+# its layout (app in /opt/folien, runtime $SCM). Pending migrations
 # are applied at each start.
-ExecStart=/usr/local/bin/scm bin/server.scm /etc/folien/config.scm
+ExecStart=/opt/folien/bin/scm bin/server.scm /etc/folien/config.scm
 
 # Restart on any exit. Combined with the daily restart timer this makes
 # the service self-healing across OOMs and unexpected exceptions.

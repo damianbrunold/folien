@@ -32,6 +32,19 @@
     (test-equal 'none (config-ref cfg 'missing 'none)))
   (test-error (read-config (tmp-file "b.scm" "(display 1)"))))
 
+(test-group "read-config follows (load file), as the package's stub does"
+  ;; relative to the including file (an absolute path is used as it is,
+  ;; see resolve-path)
+  (tmp-file "etc.scm" "(define port 9000)\n(define name \"y\")")
+  (let ((cfg (read-config (tmp-file "stub.scm"
+                                    ";; stub\n(load \"etc.scm\")\n(define after 1)"))))
+    (test-equal 9000 (config-ref cfg 'port 0))
+    (test-equal "y" (config-ref cfg 'name #f))
+    (test-equal 1 (config-ref cfg 'after 0)))
+  (test-error (read-config (tmp-file "c.scm" "(load 1)")))
+  (for-each (lambda (f) (delete-file (string-append tmp "/" f)))
+            '("etc.scm" "stub.scm" "c.scm")))
+
 (test-group "the example config reads"
   (let ((cfg (read-config (string-append root "/config.example.scm"))))
     (test-equal 8090 (config-ref cfg 'http-port 0))

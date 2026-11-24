@@ -44,8 +44,12 @@ for unit in "$APP.service" \
             "$APP-restart.service" "$APP-restart.timer" \
             "$APP-maintenance.service" "$APP-maintenance.timer" \
             "$APP-backup.service" "$APP-backup.timer"; do
-  sed "s|/usr/local/bin/scm|$SCM|" "$SRC/deploy/systemd/$unit" \
-    > "/etc/systemd/system/$unit"
+  # the units are written for the Debian package (runtime /opt/folien/bin,
+  # app /opt/folien/app); here the app is /opt/folien and the runtime $SCM
+  sed -e "s|/opt/$APP/bin/scm|$SCM|" \
+      -e "s|^WorkingDirectory=/opt/$APP/app\$|WorkingDirectory=/opt/$APP|" \
+      -e "s|/opt/$APP/bin/healthcheck |/opt/$APP/deploy/healthcheck.sh /etc/$APP/config.scm |" \
+      "$SRC/deploy/systemd/$unit" > "/etc/systemd/system/$unit"
 done
 
 systemctl daemon-reload

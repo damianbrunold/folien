@@ -32,7 +32,10 @@
       "Syntax: (read-config path)
 Library: (app config)
 Description: Reads the (define name expression) forms in path and returns
-  an alist of (name . value). Any other form is an error."
+  an alist of (name . value). A (load \"file\") form reads the settings of
+  file in its place (relative to path's directory unless absolute): the
+  Debian package's /opt/folien/app/config.scm is (load
+  \"/etc/folien/config.scm\"). Any other form is an error."
       (let ((env (environment '(scheme base))))
         (call-with-input-file path
           (lambda (port)
@@ -47,6 +50,16 @@ Description: Reads the (define name expression) forms in path and returns
                             (null? (cdddr form)))
                        (loop (cons (cons (cadr form) (eval (caddr form) env))
                                    acc)))
+                      ((and (pair? form)
+                            (eq? (car form) 'load)
+                            (pair? (cdr form))
+                            (string? (cadr form))
+                            (null? (cddr form)))
+                       (loop (append (reverse (read-config
+                                               (resolve-path
+                                                (directory-name path)
+                                                (cadr form))))
+                                     acc)))
                       (else (error "config: expected (define name value)"
                                    form)))))))))
 
@@ -68,8 +81,9 @@ Description: Writes target as a copy of example, with each secret
       "Syntax: (load-config root args)
 Library: (app config)
 Description: Reads the config named by the first command-line argument in
-  args, or else by the environment variable FOLIEN_CONFIG (the Debian
-  package's tools set it), or else root/config.scm. On the first run,
+  args, or else by the environment variable FOLIEN_CONFIG, or else
+  root/config.scm (in the Debian package a stub that loads
+  /etc/folien/config.scm, see read-config). On the first run,
   when root/config.scm does not exist yet, it is created from
   config.example.scm."
       (cond ((pair? args) (read-config (car args)))

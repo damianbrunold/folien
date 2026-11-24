@@ -379,12 +379,20 @@ then put `data-dir` back.
 
 ## Deploy
 
-**Debian package** (preferred): `scm packaging/package-deb.scm` builds
-`releases/folien_<version>_all.deb` from the current commit (pure Scheme,
-reproducible; bundles the dabscm runtime it was built with, the units
-and a default config). `apt install ./folien_<version>_all.deb`, then
-follow `/usr/share/doc/folien/README.Debian` (database, config, first
-admin with `folien-admin seed-admin <name>`, start the units).
+**Debian package** (preferred): `scm package-deb.scm` builds
+`releases/folien_<version>_all.deb` from the current commit with dabscm's
+`(scm deb webapp)` (pure Scheme, reproducible; bundles the dabscm runtime
+it was built with, the units and a default config). `apt install
+./folien_<version>_all.deb`, then follow
+`/usr/share/doc/folien/README.Debian` (database, config, first admin with
+`folien-admin seed-admin <name>`, start the units).
+
+`scm package-deb.scm --native` builds `folien_<version>_amd64.deb`
+instead: the same package with the `bin/` programs compiled by dabscm
+native (`--scmc <scmc>`, `--target <triple>`), no Java. Both use the
+same units, config and `folien-admin`; one replaces the other
+(`apt install ./folien_<version>_amd64.deb` over the `_all` one) and the
+config in `/etc/folien` is kept.
 
 **Without a package**: `sudo deploy/install.sh` installs the checkout to
 `/opt/folien` with the config in `/etc/folien/config.scm` (as in
